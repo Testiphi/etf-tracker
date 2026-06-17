@@ -7,6 +7,10 @@ on:
   # 也可手动触发
   workflow_dispatch:
 
+# 给 GITHUB_TOKEN 写入权限，用于最后的数据存档 git push
+permissions:
+  contents: write
+
 jobs:
   track:
     runs-on: ubuntu-latest
@@ -38,6 +42,7 @@ jobs:
           git config user.name "ETF Bot"
           git config user.email "etf-bot@users.noreply.github.com"
           git add data/
-          # 如果有新的日报才 commit
           git diff --cached --quiet || git commit -m "auto report $(date +'%Y-%m-%d')"
+          # 使用 GITHUB_TOKEN 认证推送
+          git remote set-url origin https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}
           git push
