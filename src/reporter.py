@@ -29,6 +29,19 @@ def _format_change(change: float) -> str:
     return f"{direction} {change:+.2f}%"
 
 
+def _fmt_pct(val: float) -> str:
+    """格式化百分比（含颜色符号）"""
+    direction = "🟢" if val >= 0 else "🔴"
+    return f"{direction} {val:+.2f}%"
+
+
+def _fmt_risk(val: float) -> str:
+    """格式化风险指标（回撤用红色标注）"""
+    if val >= 0:
+        return "0.00%"
+    return f"🔴 {val:.2f}%"
+
+
 def _volume_str(vol: float) -> str:
     """格式化成交量，显示为可读形式"""
     if vol <= 0:
@@ -47,6 +60,7 @@ def generate_report(
     index_results: dict[str, FundDataPoint],
     ai_analysis: str | None,
     errors: str,
+    risk_report: dict | None = None,
 ) -> str:
     """
     生成 Markdown 格式日报
@@ -174,6 +188,55 @@ def generate_report(
                     idx_point = index_results[idx_code]
                     lines.append(f"  - 对应指数：{idx_name} {_format_change(idx_point.daily_change)}")
             lines.append("")
+
+    # ── 组合风险分析 ─────────────────────────────────
+    if risk_report:
+        lines.extend([
+            "---",
+            "",
+            "### 📊 组合风险分析",
+            "",
+            "| 指标 | 值 |",
+            "|------|:---:|",
+            f"| 组合今日收益率 | {_fmt_pct(risk_report['portfolio_return'])} |",
+            f"| 累积收益率 | {_fmt_pct(risk_report['cumulative_return'])} |",
+            f"| 最大回撤 | {_fmt_risk(risk_report['max_drawdown'])} |",
+            f"| 日波动率 | {risk_report['volatility']:.2f}% |",
+            f"| {risk_report['benchmark_name']} 同期收益 | {_fmt_pct(risk_report['benchmark_return'])} |",
+            "",
+        ])
+
+        # 判读仓位建议（简易规则）
+        dd = risk_report['max_drawdown']
+        vol = risk_report['volatility']
+        advice_parts = []
+        if dd < -10:
+            advice_parts.append("⚠️ 最大回撤超过 10%，建议审视组合风险敞口")
+        elif dd < -5:
+            advice_parts.append("🔸 最大回撤处于可控范围，继续观察")
+        else:
+            advice_parts.append("✅ 最大回撤在 5% 以内，风控良好")
+        if vol > 2:
+            advice_parts.append("📊 波动率偏高，组合可能偏向成长型")
+        elif vol < 0.5:
+            advice_parts.append("📊 波动率偏低，组合偏向稳健")
+        else:
+            advice_parts.append("📊 波动率适中")
+
+        # 与基准对比
+        port_ret = risk_report['cumulative_return']
+        bench_ret = risk_report['benchmark_return']
+        diff = port_ret - bench_ret
+        if diff > 0:
+            advice_parts.append(f"📈 组合跑赢 {risk_report['benchmark_name']} {diff:+.2f}%")
+        elif diff < 0:
+            advice_parts.append(f"📉 组合跑输 {risk_report['benchmark_name']} {diff:+.2f}%")
+        else:
+            advice_parts.append(f"📊 组合与 {risk_report['benchmark_name']} 表现持平")
+
+        for line in advice_parts:
+            lines.append(line)
+        lines.append("")
 
     # ── AI 分析 ──────────────────────────────────────
     if ai_analysis:

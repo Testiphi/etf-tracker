@@ -20,6 +20,7 @@ def analyze(
     cfg: Config,
     results: dict[str, FundDataPoint],
     index_results: dict[str, FundDataPoint] | None = None,
+    risk_report: dict | None = None,
 ) -> str | None:
     """调用 DeepSeek 对当日数据进行综合分析"""
     if not cfg.ai_enabled:
@@ -28,8 +29,8 @@ def analyze(
     if not cfg.ai_api_key:
         return "AI 分析已启用但未配置 API Key（请设置 GitHub Secret: AI_API_KEY）"
 
-    # 构造 prompt（含基金 + 指数 + 黄金）
-    prompt = _build_prompt(cfg, results, index_results or {})
+    # 构造 prompt（含基金 + 指数 + 黄金 + 风险数据）
+    prompt = _build_prompt(cfg, results, index_results or {}, risk_report)
 
     # 调用 DeepSeek API
     headers = {
@@ -77,6 +78,7 @@ def _build_prompt(
     cfg: Config,
     results: dict[str, FundDataPoint],
     index_results: dict[str, FundDataPoint],
+    risk_report: dict | None = None,
 ) -> str:
     """构造发给 DeepSeek 的综合分析 prompt"""
     now = datetime.now(timezone(timedelta(hours=8)))
@@ -147,6 +149,20 @@ def _build_prompt(
                 )
             else:
                 lines.append(f"| {cfg_item['name']} | — | 无数据 | — |")
+
+    # ── 组合风险数据 ────────────────────────────────
+    if risk_report:
+        lines.extend([
+            "### 组合风险指标",
+            "",
+            f"- 组合今日收益率: {risk_report['portfolio_return']:+.2f}%",
+            f"- 累积收益率（近期）: {risk_report['cumulative_return']:+.2f}%",
+            f"- 最大回撤: {risk_report['max_drawdown']:.2f}%",
+            f"- 日波动率: {risk_report['volatility']:.2f}%",
+            f"- {risk_report['benchmark_name']} 同期收益: {risk_report['benchmark_return']:+.2f}%",
+            f"- 组合 vs 基准: {risk_report['cumulative_return'] - risk_report['benchmark_return']:+.2f}%",
+            "",
+        ])
 
     lines.append("")
     lines.append("---")

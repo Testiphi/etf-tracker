@@ -24,6 +24,9 @@ class Config:
         self.funds: list[dict] = raw.get("funds", [])
         if not self.funds:
             raise ValueError("⚠️ settings.yaml 中 funds 列表为空，请至少添加一支基金")
+        # 为未设定 weight 的基金默认 weight=1，便于组合计算
+        for f in self.funds:
+            f.setdefault("weight", 1)
 
         # --- 大盘指数 ---
         self.indices: list[dict] = raw.get("indices", [])

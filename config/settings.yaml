@@ -13,18 +13,23 @@ funds:
   - code: "001917"
     name: "招商量化精选股票A"
     type: fund
+    weight: 2           # 持仓份数/权重（影响组合收益率计算）
   - code: "019305"
     name: "摩根标普500指数(QDII)人民币C"
     type: fund
+    weight: 1
   - code: "006479"
     name: "广发纳斯达克100ETF联接(QDII)C"
     type: fund
+    weight: 1
   - code: "022460"
     name: "易方达中证A500ETF联接C"
     type: fund
+    weight: 1
   - code: "011609"
     name: "易方达上证科创50ETF联接C"
     type: fund
+    weight: 1
 
 # --- 想加真正的 ETF（盘中价）？加下面这样 ---
 #  - code: "510300"
@@ -73,6 +78,7 @@ ai_analysis:
        今日表现如何？成交量有无异常？
     3. 黄金行情今日如何？对避险情绪有何提示？
     4. 短期趋势判断（1-2周维度）和调仓建议
+    5. 如有组合风险数据，结合最大回撤和波动率评估当前风险水平
 
 # 交叉验证设置
 validation:

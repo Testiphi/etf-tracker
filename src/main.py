@@ -30,6 +30,8 @@ from src.validator import Validator
 from src.analyzer import analyze
 from src.reporter import generate_report
 from src.mailer import send_report
+from src.storage import save_snapshot
+from src.risk import get_risk_report
 
 
 def main():
@@ -69,9 +71,24 @@ def main():
     else:
         print("\n⏭ 未配置指数/商品跟踪（跳过）")
 
-    # 5. AI 分析（可选）
+    # 5.5 保存历史数据（在 AI 分析之前，确保数据已入库）
+    print("\n💾 保存历史数据...")
+    save_snapshot(results, index_results)
+
+    # 5.6 组合风险分析
+    print("\n📊 组合风险分析...")
+    risk_report = get_risk_report(cfg, results, days=30)
+    if risk_report and risk_report.get("cumulative_return") != 0:
+        print(f"  📈 组合今日收益率: {risk_report['portfolio_return']:+.2f}%")
+        print(f"  📉 累积收益率: {risk_report['cumulative_return']:+.2f}%")
+        print(f"  🔻 最大回撤: {risk_report['max_drawdown']:.2f}%")
+    else:
+        print("  ⏭ 历史数据不足（需至少2条记录），跳过风险分析")
+        risk_report = None
+
+    # 5. AI 分析（可选）- 传入风险数据供参考
     print("\n🧠 AI 分析...")
-    ai_result = analyze(cfg, results, index_results)
+    ai_result = analyze(cfg, results, index_results, risk_report)
     if ai_result and ai_result.startswith("🤖"):
         print(f"  {ai_result}（未启用）")
     elif ai_result:
@@ -82,7 +99,7 @@ def main():
     # 6. 生成日报
     print("\n📝 生成日报...")
     errors = validator.get_report_errors()
-    report = generate_report(cfg, results, index_results, ai_result, errors)
+    report = generate_report(cfg, results, index_results, ai_result, errors, risk_report)
 
     # 保存到 data/ 目录（留档）
     from datetime import datetime, timezone, timedelta
