@@ -32,6 +32,10 @@ class Config:
         self.indices: list[dict] = raw.get("indices", [])
         self.commodities: list[dict] = raw.get("commodities", [])
 
+        # --- 定投计划 ---
+        fi = raw.get("fixed_investment", {}) or {}
+        self.fixed_investment_daily: list[dict] = fi.get("daily", [])
+
         # --- AI 分析 ---
         ai = raw.get("ai_analysis", {}) or {}
         self.ai_enabled: bool = ai.get("enabled", False)

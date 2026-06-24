@@ -164,6 +164,18 @@ def _build_prompt(
             "",
         ])
 
+    # ── 定投计划 ────────────────────────────────────
+    if cfg.fixed_investment_daily:
+        lines.extend([
+            "### 定投计划",
+            "",
+            "| 基金 | 每日金额 |",
+            "|------|:-------:|",
+        ])
+        for plan in cfg.fixed_investment_daily:
+            lines.append(f"| {plan['name']}（{plan['code']}） | {plan['amount']}元 |")
+        lines.append("")
+
     lines.append("")
     lines.append("---")
     lines.append("")
