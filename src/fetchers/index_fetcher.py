@@ -30,6 +30,7 @@ EM_QUOTE_URL = "https://push2.eastmoney.com/api/qt/stock/get"     # 单只行情
 
 # 雅虎财经 API（美股指数 + 黄金期货备用）
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+YAHOO_CHART_URL_V2 = "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 
 class IndexFetcher:
@@ -37,6 +38,106 @@ class IndexFetcher:
 
     def __init__(self, timeout: int = 15):
         self.timeout = timeout
+        self._yahoo_session: requests.Session | None = None
+
+    # ── 雅虎财经辅助（Cookie + Crumb 绕过 403）────────────────
+
+    def _get_yahoo_session(self) -> requests.Session | None:
+        """
+        初始化带 Cookie 和 Crumb 的雅虎财经会话。
+        返回已配置好 crumb 参数的 session（附加 .crumb 属性）。
+        """
+        if self._yahoo_session is not None:
+            return self._yahoo_session
+
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/json,*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+
+        try:
+            # 第一步：访问首页拿 Cookie（设置 cookies 容器）
+            session.get("https://fc.yahoo.com/", timeout=self.timeout)
+
+            # 第二步：获取 crumb
+            crumb_resp = session.get(
+                "https://query2.finance.yahoo.com/v1/test/getcrumb",
+                timeout=self.timeout,
+            )
+            if crumb_resp.status_code == 200:
+                crumb = crumb_resp.text.strip()
+                session.crumb = crumb  # type: ignore
+                print(f"    🍪 雅虎财经 crumb 获取成功")
+            else:
+                # crumb 获取失败，无 crumb 继续尝试
+                session.crumb = ""  # type: ignore
+                print(f"    ⚠ 雅虎财经 crumb 获取失败 ({crumb_resp.status_code})")
+        except Exception as e:
+            session.crumb = ""  # type: ignore
+            print(f"    ⚠ 雅虎财经会话初始化失败: {e}")
+
+        self._yahoo_session = session
+        return session
+
+    def _yahoo_fetch(self, symbol: str) -> dict | None:
+        """
+        通用雅虎财经数据获取
+
+        Args:
+            symbol: 股票/指数代码（如 ^GSPC, GC=F）
+
+        Returns:
+            解析后的 response dict，或 None
+        """
+        session = self._get_yahoo_session()
+        encoded = symbol.replace("^", "%5E")
+        crumb = getattr(session, "crumb", "")
+
+        # 先尝试 query2，不行再 fallback 到 query1
+        urls = [
+            YAHOO_CHART_URL_V2.format(symbol=encoded),
+            YAHOO_CHART_URL.format(symbol=encoded),
+        ]
+
+        for url in urls:
+            try:
+                params = {"interval": "1d", "range": "5d"}
+                if crumb:
+                    params["crumb"] = crumb
+
+                resp = session.get(url, params=params, timeout=self.timeout)
+                if resp.status_code == 200:
+                    return resp.json()
+                elif resp.status_code == 403:
+                    continue  # 尝试下一个 URL
+                else:
+                    return None
+            except Exception:
+                continue
+
+        # 都失败：尝试不带 session 的裸请求 + 备用 headers（GitHub Actions 场景）
+        try:
+            resp = requests.get(
+                YAHOO_CHART_URL.format(symbol=encoded),
+                params={"interval": "1d", "range": "5d"},
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Referer": "https://finance.yahoo.com/",
+                },
+                timeout=self.timeout,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            pass
+
+        return None
 
     def fetch(self, code: str, name: str, market: str) -> FundDataPoint | None:
         """根据 market 类型路由到对应获取方法"""
@@ -109,34 +210,37 @@ class IndexFetcher:
 
     # ── 美股指数 ──────────────────────────────────
 
-    def _fetch_us_index(self, code: str, name: str) -> FundDataPoint | None:
-        """通过雅虎财经 API 获取美股指数数据"""
-        # ^ 需要 URL 编码
-        symbol = code.replace("^", "%5E")
+    # 腾讯财经 US 代码映射
+    _TENCENT_US_MAP = {
+        "^GSPC": "usINX",   # 标普500
+        "^NDX": "usNDX",    # 纳斯达克100
+        "^IXIC": "usIXIC",  # 纳斯达克综合（备用）
+        "^DJI": "usDJI",    # 道琼斯（备用）
+    }
 
+    def _fetch_us_index(self, code: str, name: str) -> FundDataPoint | None:
+        """获取美股指数数据（多源：雅虎→腾讯）"""
+        # 方法一：雅虎财经（从 GitHub Actions 可用）
+        point = self._try_yahoo_us(code, name)
+        if point:
+            return point
+
+        # 方法二：腾讯财经（从中国网络可用）
+        point = self._try_tencent_us(code, name)
+        if point:
+            return point
+
+        print(f"  ⚠ 所有美股数据源均失败 [{name}]")
+        return None
+
+    def _try_yahoo_us(self, code: str, name: str) -> FundDataPoint | None:
+        """通过雅虎财经 API 获取美股指数数据"""
         try:
-            resp = requests.get(
-                YAHOO_CHART_URL.format(symbol=symbol),
-                params={"interval": "1d", "range": "5d"},
-                headers=HEADERS,
-                timeout=self.timeout,
-            )
-            resp.raise_for_status()
-            resp_json = resp.json()
+            resp_json = self._yahoo_fetch(code)
+            if not resp_json:
+                return None
 
             result = resp_json.get("chart", {}).get("result", [])
-            if not result:
-                # 试试备用 symbol 格式（去掉 ^）
-                alt_symbol = code.lstrip("^")
-                resp2 = requests.get(
-                    YAHOO_CHART_URL.format(symbol=alt_symbol),
-                    params={"interval": "1d", "range": "5d"},
-                    headers=HEADERS,
-                    timeout=self.timeout,
-                )
-                resp2.raise_for_status()
-                result = resp2.json().get("chart", {}).get("result", [])
-
             if not result:
                 return None
 
@@ -150,19 +254,15 @@ class IndexFetcher:
             if not closes:
                 return None
 
-            # 确定最后一个完整交易日
-            # 如果当天（US东部时间）有部分数据，用前一天
             last_complete_idx = len(closes) - 1
             if timestamps:
-                now_ny = datetime.now(timezone.utc) - timedelta(hours=4)  # EDT ≈ UTC-4
+                now_ny = datetime.now(timezone.utc) - timedelta(hours=4)
                 today_ny = now_ny.date()
                 last_ts = datetime.fromtimestamp(timestamps[-1], tz=timezone.utc)
                 last_day = (last_ts - timedelta(hours=4)).date()
-                # 如果最后一条数据是今天（EDT），取前一条
                 if last_day == today_ny and len(closes) > 1 and closes[-1] is None:
                     last_complete_idx = -2
 
-            # 找到最后一个有值的收盘价
             closest_idx = last_complete_idx
             while closest_idx >= 0 and closes[closest_idx] is None:
                 closest_idx -= 1
@@ -171,14 +271,9 @@ class IndexFetcher:
 
             close_price = float(closes[closest_idx])
             prev_close = float(meta.get("chartPreviousClose", close_price) or close_price)
-            if prev_close > 0:
-                change_pct = (close_price - prev_close) / prev_close * 100
-            else:
-                change_pct = 0.0
-
+            change_pct = ((close_price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
             volume = float(volumes[closest_idx]) if volumes and closest_idx < len(volumes) and volumes[closest_idx] else 0.0
 
-            # 日期
             date_str = ""
             if timestamps and closest_idx < len(timestamps) and timestamps[closest_idx]:
                 dt = datetime.fromtimestamp(timestamps[closest_idx], tz=timezone.utc)
@@ -196,6 +291,51 @@ class IndexFetcher:
             )
         except Exception as e:
             print(f"  ⚠ 雅虎财经失败 [{name}]: {e}")
+            return None
+
+    def _try_tencent_us(self, code: str, name: str) -> FundDataPoint | None:
+        """
+        通过腾讯财经 API 获取美股指数
+        从国内网络可用，无需翻墙。
+        """
+        tc_code = self._TENCENT_US_MAP.get(code)
+        if not tc_code:
+            return None
+
+        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={tc_code},day,,,320,qfq"
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=self.timeout)
+            resp.raise_for_status()
+            data = resp.json()
+
+            # 从 day 序列取最后一条完整数据
+            day_data = data.get("data", {}).get(tc_code, {}).get("day", [])
+            if not day_data:
+                return None
+
+            last = day_data[-1]
+            # day 格式: [date, close, open, high, low, volume]
+            if len(last) < 6:
+                return None
+
+            date_str = last[0]
+            close_price = float(last[1])
+            open_price = float(last[2])
+            change_pct = round((close_price - open_price) / open_price * 100, 2) if open_price > 0 else 0.0
+            volume = float(last[5]) if last[5] else 0.0
+
+            return FundDataPoint(
+                code=code,
+                name=name,
+                date=date_str,
+                net_value=round(close_price, 2),
+                acc_value=0,
+                daily_change=change_pct,
+                volume=round(volume, 0),
+                source="tencent-finance",
+            )
+        except Exception as e:
+            print(f"  ⚠ 腾讯财经失败 [{name}]: {e}")
             return None
 
     # ── 黄金现货 ──────────────────────────────────
@@ -262,16 +402,10 @@ class IndexFetcher:
 
     def _try_yahoo_gold(self, code: str, name: str) -> FundDataPoint | None:
         """通过雅虎财经获取黄金期货（GC=F）作为备用"""
-        yahoo_code = "GC=F"
         try:
-            resp = requests.get(
-                YAHOO_CHART_URL.format(symbol=yahoo_code),
-                params={"interval": "1d", "range": "5d"},
-                headers=HEADERS,
-                timeout=self.timeout,
-            )
-            resp.raise_for_status()
-            resp_json = resp.json()
+            resp_json = self._yahoo_fetch("GC=F")
+            if not resp_json:
+                return None
             result = resp_json.get("chart", {}).get("result", [])
             if not result:
                 return None

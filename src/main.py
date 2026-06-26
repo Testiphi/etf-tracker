@@ -32,6 +32,7 @@ from src.reporter import generate_report
 from src.mailer import send_report
 from src.storage import save_snapshot
 from src.risk import get_risk_report
+from src.portfolio import sync_from_config, compute_portfolio, Portfolio
 
 
 def main():
@@ -75,7 +76,20 @@ def main():
     print("\n💾 保存历史数据...")
     save_snapshot(results, index_results)
 
-    # 5.6 组合风险分析
+    # 5.6 组合明细计算（基于仓位管理模块）
+    print("\n📦 计算组合明细...")
+    sync_from_config(cfg)
+    portfolio = compute_portfolio(cfg, results)
+    if portfolio.total_cost > 0:
+        print(f"  💰 总投入: ¥{portfolio.total_cost:.2f}")
+        print(f"  📈 总市值: ¥{portfolio.total_value:.2f}")
+        pnl_icon = "🟢" if portfolio.total_pnl >= 0 else "🔴"
+        print(f"  {pnl_icon} 总盈亏: ¥{portfolio.total_pnl:.2f} ({portfolio.total_pnl_pct:+.2f}%)")
+    else:
+        portfolio = None
+        print("  ⏭ 未配置仓位数据（跳过）")
+
+    # 5.7 组合风险分析
     print("\n📊 组合风险分析...")
     risk_report = get_risk_report(cfg, results, days=30)
     if risk_report and risk_report.get("cumulative_return") != 0:
@@ -88,7 +102,22 @@ def main():
 
     # 5. AI 分析（可选）- 传入风险数据供参考
     print("\n🧠 AI 分析...")
-    ai_result = analyze(cfg, results, index_results, risk_report)
+    # 如果有组合明细计算，将持仓明细也传给 AI
+    portfolio_detail = None
+    if portfolio and portfolio.holdings:
+        portfolio_detail = {
+            "total_cost": portfolio.total_cost,
+            "total_value": portfolio.total_value,
+            "total_pnl": portfolio.total_pnl,
+            "total_pnl_pct": portfolio.total_pnl_pct,
+            "holdings": [
+                {"name": h.fund_name or h.fund_code, "code": h.fund_code,
+                 "shares": h.shares, "cost": h.cost_basis,
+                 "value": h.current_value, "pnl": h.pnl, "pnl_pct": h.pnl_pct}
+                for h in portfolio.holdings
+            ],
+        }
+    ai_result = analyze(cfg, results, index_results, risk_report, portfolio_detail)
     if ai_result and ai_result.startswith("🤖"):
         print(f"  {ai_result}（未启用）")
     elif ai_result:
@@ -99,7 +128,7 @@ def main():
     # 6. 生成日报
     print("\n📝 生成日报...")
     errors = validator.get_report_errors()
-    report = generate_report(cfg, results, index_results, ai_result, errors, risk_report)
+    report = generate_report(cfg, results, index_results, ai_result, errors, risk_report, portfolio)
 
     # 保存到 data/ 目录（留档）
     from datetime import datetime, timezone, timedelta

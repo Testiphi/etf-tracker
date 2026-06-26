@@ -27,6 +27,7 @@ class Config:
         # 为未设定 weight 的基金默认 weight=1，便于组合计算
         for f in self.funds:
             f.setdefault("weight", 1)
+            f.setdefault("shares", 0)
 
         # --- 大盘指数 ---
         self.indices: list[dict] = raw.get("indices", [])

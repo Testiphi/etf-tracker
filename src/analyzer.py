@@ -21,6 +21,7 @@ def analyze(
     results: dict[str, FundDataPoint],
     index_results: dict[str, FundDataPoint] | None = None,
     risk_report: dict | None = None,
+    portfolio_detail: dict | None = None,
 ) -> str | None:
     """调用 DeepSeek 对当日数据进行综合分析"""
     if not cfg.ai_enabled:
@@ -29,8 +30,8 @@ def analyze(
     if not cfg.ai_api_key:
         return "AI 分析已启用但未配置 API Key（请设置 GitHub Secret: AI_API_KEY）"
 
-    # 构造 prompt（含基金 + 指数 + 黄金 + 风险数据）
-    prompt = _build_prompt(cfg, results, index_results or {}, risk_report)
+    # 构造 prompt（含基金 + 指数 + 黄金 + 风险 + 组合明细）
+    prompt = _build_prompt(cfg, results, index_results or {}, risk_report, portfolio_detail)
 
     # 调用 DeepSeek API
     headers = {
@@ -79,6 +80,7 @@ def _build_prompt(
     results: dict[str, FundDataPoint],
     index_results: dict[str, FundDataPoint],
     risk_report: dict | None = None,
+    portfolio_detail: dict | None = None,
 ) -> str:
     """构造发给 DeepSeek 的综合分析 prompt"""
     now = datetime.now(timezone(timedelta(hours=8)))
@@ -163,6 +165,26 @@ def _build_prompt(
             f"- 组合 vs 基准: {risk_report['cumulative_return'] - risk_report['benchmark_return']:+.2f}%",
             "",
         ])
+
+    # ── 组合盈亏明细 ────────────────────────────────
+    if portfolio_detail:
+        lines.extend([
+            "### 组合持仓与盈亏",
+            "",
+            f"- 总投入: ¥{portfolio_detail['total_cost']:.2f}",
+            f"- 总市值: ¥{portfolio_detail['total_value']:.2f}",
+            f"- 总盈亏: ¥{portfolio_detail['total_pnl']:+.2f} ({portfolio_detail['total_pnl_pct']:+.2f}%)",
+            "",
+        ])
+        lines.append("各基金明细：")
+        for h in portfolio_detail.get("holdings", []):
+            lines.append(
+                f"  - {h['name']}: 份数={h['shares']:.4f}"
+                f" 成本=¥{h['cost']:.2f}"
+                f" 市值=¥{h['value']:.2f}"
+                f" 盈亏={h['pnl']:+.2f} ({h['pnl_pct']:+.2f}%)"
+            )
+        lines.append("")
 
     # ── 定投计划 ────────────────────────────────────
     if cfg.fixed_investment_daily:
