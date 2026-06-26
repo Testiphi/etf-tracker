@@ -47,6 +47,17 @@ class Holding:
 
 
 @dataclass
+class Plan:
+    """一条定投计划"""
+    id: int = 0
+    fund_code: str = ""
+    fund_name: str = ""
+    amount: float = 0.0       # 每日定投金额（元）
+    period: str = "daily"     # daily / weekly / monthly
+    note: str = ""
+
+
+@dataclass
 class Portfolio:
     """整体组合"""
     holdings: list[Holding] = field(default_factory=list)
@@ -80,9 +91,21 @@ def _ensure_db():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS portfolio_config (
             fund_code    TEXT PRIMARY KEY,
-            weight       REAL DEFAULT 0,      -- settings.yaml 中的 weight（元）
-            shares       REAL DEFAULT 0,      -- settings.yaml 中的 shares（份数）
-            auto_calc    INTEGER DEFAULT 0,    -- 是否自动从 shares × NAV 算 weight
+            weight       REAL DEFAULT 0,
+            shares       REAL DEFAULT 0,
+            auto_calc    INTEGER DEFAULT 0,
+            updated_at   TEXT DEFAULT (datetime('now','localtime'))
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS investment_plans (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            fund_code    TEXT NOT NULL,
+            fund_name    TEXT DEFAULT '',
+            amount       REAL DEFAULT 0,
+            period       TEXT DEFAULT 'daily',
+            note         TEXT DEFAULT '',
+            created_at   TEXT DEFAULT (datetime('now','localtime')),
             updated_at   TEXT DEFAULT (datetime('now','localtime'))
         )
     """)
@@ -158,10 +181,6 @@ def sync_from_config(cfg: Config):
     """
     将 settings.yaml 中的 funds 同步到 portfolio_config 表。
     settings.yaml 是权威来源，每次运行自动同步。
-
-    新增字段：
-      - weight: 投入金额（元），已在用
-      - shares: 基金份数（可选），未来用户可直接填份数
     """
     _ensure_db()
     conn = sqlite3.connect(str(_DB_PATH))
@@ -177,6 +196,92 @@ def sync_from_config(cfg: Config):
     conn.commit()
     conn.close()
     print(f"  📋 已同步 {len(cfg.funds)} 条仓位配置")
+
+
+def sync_plans_from_config(cfg: Config):
+    """
+    将 settings.yaml 中的定投计划同步到 investment_plans 表。
+    仅在不重复的情况下添加（按 fund_code + amount 去重）。
+    """
+    _ensure_db()
+    conn = sqlite3.connect(str(_DB_PATH))
+    for plan in cfg.fixed_investment_daily:
+        code = plan["code"]
+        amount = plan["amount"]
+        name = plan.get("name", "")
+        # 检查是否已存在相同的计划
+        existing = conn.execute(
+            "SELECT id FROM investment_plans WHERE fund_code=? AND amount=?",
+            (code, amount),
+        ).fetchone()
+        if not existing:
+            conn.execute(
+                """INSERT INTO investment_plans
+                   (fund_code, fund_name, amount, period, note)
+                   VALUES (?, ?, ?, 'daily', '来自 settings.yaml')""",
+                (code, name, amount),
+            )
+    conn.commit()
+    conn.close()
+    if cfg.fixed_investment_daily:
+        names = [p.get("name", p["code"]) for p in cfg.fixed_investment_daily]
+        print(f"  📋 已同步 {len(cfg.fixed_investment_daily)} 条定投计划: {', '.join(names)}")
+
+
+def load_plans() -> list[Plan]:
+    """加载所有定投计划"""
+    _ensure_db()
+    conn = sqlite3.connect(str(_DB_PATH))
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT * FROM investment_plans ORDER BY fund_code"
+    ).fetchall()
+    conn.close()
+    return [
+        Plan(
+            id=r["id"],
+            fund_code=r["fund_code"],
+            fund_name=r["fund_name"] or "",
+            amount=r["amount"] or 0.0,
+            period=r["period"] or "daily",
+            note=r["note"] or "",
+        )
+        for r in rows
+    ]
+
+
+def save_plan(p: Plan) -> int:
+    """新增或更新一条定投计划"""
+    _ensure_db()
+    conn = sqlite3.connect(str(_DB_PATH))
+    now = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
+    if p.id:
+        conn.execute(
+            """UPDATE investment_plans
+               SET fund_code=?, fund_name=?, amount=?, period=?, note=?, updated_at=?
+               WHERE id=?""",
+            (p.fund_code, p.fund_name, p.amount, p.period, p.note, now, p.id),
+        )
+    else:
+        cur = conn.execute(
+            """INSERT INTO investment_plans
+               (fund_code, fund_name, amount, period, note, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (p.fund_code, p.fund_name, p.amount, p.period, p.note, now, now),
+        )
+        p.id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return p.id
+
+
+def delete_plan(plan_id: int):
+    """删除一条定投计划"""
+    _ensure_db()
+    conn = sqlite3.connect(str(_DB_PATH))
+    conn.execute("DELETE FROM investment_plans WHERE id=?", (plan_id,))
+    conn.commit()
+    conn.close()
 
 
 def get_config_weight(fund_code: str) -> float:

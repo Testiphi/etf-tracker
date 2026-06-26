@@ -74,7 +74,7 @@ async def _build_portfolio_data():
     """全量抓取 + 组合计算（耗时 30-60s）"""
     from src.fetchers.eastmoney_fund import EastMoneyFundFetcher
     from src.fetchers.index_fetcher import fetch_all_indices
-    from src.portfolio import sync_from_config, compute_portfolio
+    from src.portfolio import sync_from_config, sync_plans_from_config, compute_portfolio, load_plans
 
     fetcher = EastMoneyFundFetcher(timeout=15)
     print("[web] 获取基金数据...")
@@ -95,6 +95,7 @@ async def _build_portfolio_data():
         index_results = fetch_all_indices(cfg.indices, cfg.commodities)
 
     sync_from_config(cfg)
+    sync_plans_from_config(cfg)
     portfolio = compute_portfolio(cfg, results)
 
     now = datetime.now(timezone(timedelta(hours=8)))
@@ -115,6 +116,19 @@ async def _build_portfolio_data():
             "note": h.note,
         })
 
+    plans = load_plans()
+    plans_data = [
+        {
+            "id": p.id,
+            "fund_code": p.fund_code,
+            "fund_name": p.fund_name or p.fund_code,
+            "amount": p.amount,
+            "period": p.period,
+            "note": p.note,
+        }
+        for p in plans
+    ]
+
     data = {
         "date": date_str,
         "total_cost": round(portfolio.total_cost, 2),
@@ -122,6 +136,7 @@ async def _build_portfolio_data():
         "total_pnl": round(portfolio.total_pnl, 2),
         "total_pnl_pct": round(portfolio.total_pnl_pct, 2),
         "holdings": holdings_data,
+        "plans": plans_data,
         "funds_count": len(cfg.funds),
         "fetched_count": len(results),
     }
@@ -187,6 +202,54 @@ async def get_portfolio_history(days: int = 60):
         "dates": common_dates[:len(nav_series)],
         "values": [round(v * 100, 2) for v in nav_series],
     }
+
+
+# ── API: 定投计划 ───────────────────────────────────────
+
+@app.get("/api/plans")
+async def list_plans():
+    from src.portfolio import load_plans
+    plans = load_plans()
+    return [
+        {
+            "id": p.id,
+            "fund_code": p.fund_code,
+            "fund_name": p.fund_name or p.fund_code,
+            "amount": p.amount,
+            "period": p.period,
+            "note": p.note,
+        }
+        for p in plans
+    ]
+
+
+class PlanInput(BaseModel):
+    fund_code: str
+    fund_name: str = ""
+    amount: float = 0.0
+    period: str = "daily"
+    note: str = ""
+
+
+@app.post("/api/plans")
+async def create_plan(p: PlanInput):
+    from src.portfolio import Plan as PlanModel, save_plan
+    plan = PlanModel(
+        fund_code=p.fund_code,
+        fund_name=p.fund_name,
+        amount=p.amount,
+        period=p.period if p.period else "daily",
+        note=p.note,
+    )
+    save_plan(plan)
+    return {"status": "ok", "id": plan.id}
+
+
+@app.delete("/api/plans/{plan_id}")
+async def remove_plan(plan_id: int):
+    from src.portfolio import delete_plan
+    delete_plan(plan_id)
+    return {"status": "ok"}
 
 
 @app.get("/api/funds")
