@@ -70,6 +70,7 @@ tr.selected td{background:#1f6feb22;border-left:2px solid #58a6ff}
     <h1>📊 <span>ETF</span> Tracker</h1>
     <div style=display:flex;align-items:center;gap:12px;flex-wrap:wrap>
       <span class=header-meta id=headerMeta>加载中...</span>
+      <button class=btn onclick=exportCSV()>📥 CSV</button>
       <button class="btn btn-primary" onclick=refreshData() id=refreshBtn>🔄 刷新数据</button>
     </div>
   </header>
@@ -86,6 +87,13 @@ tr.selected td{background:#1f6feb22;border-left:2px solid #58a6ff}
     <div class=chart-wrapper><canvas id=portfolioChart></canvas></div>
   </div>
 
+  <!-- Tab 切换 -->
+  <div style=display:flex;gap:8px;margin-bottom:16px>
+    <button class="btn btn-primary" id=tabDashboard onclick=switchTab('dashboard') style=background:#1f6feb>📊 仪表盘</button>
+    <button class=btn id=tabReports onclick=switchTab('reports')>📰 日报</button>
+  </div>
+
+  <div id=dashboardView>
   <!-- 详情面板：点击某只基金后展开 -->
   <div class=fund-detail id=fundDetail>
     <button class=close-detail onclick=closeFundDetail()>✕</button>
@@ -127,6 +135,21 @@ tr.selected td{background:#1f6feb22;border-left:2px solid #58a6ff}
   </div>
 </div>
 
+</div><!-- /dashboardView -->
+
+<!-- 日报视图 -->
+<div id=reportsView style=display:none>
+  <div class=table-container>
+    <div class=table-header><h3>📰 历史日报</h3><span class=text-muted id=reportsCount style=font-size:13px></span></div>
+    <div class=loading id=reportsLoading><div class=spinner></div><div>加载日报列表...</div></div>
+  </div>
+  <div class=fund-detail id=reportDetail style=display:none>
+    <button class=close-detail onclick=closeReport()>✕</button>
+    <h4 id=reportTitle>日报</h4>
+    <div id=reportContent style=font-size:13px;line-height:1.6;white-space:pre-wrap;color:#c9d1d9></div>
+  </div>
+</div>
+
 <!-- Edit Modal -->
 <div class=modal-overlay id=editModal>
   <div class=modal>
@@ -145,6 +168,25 @@ tr.selected td{background:#1f6feb22;border-left:2px solid #58a6ff}
 <script>
 let portfolioChart, pieChart, catPnlChart, fundDetailChart, isRefreshing = false;
 let allHoldings = [];
+let sortKey = '', sortDir = 1;
+
+function sorted(arr) {
+  if (!sortKey) return arr;
+  return [...arr].sort((a,b) => {
+    let va = a[sortKey]||0, vb = b[sortKey]||0;
+    if (typeof va === 'string') return sortDir * va.localeCompare(vb);
+    return sortDir * (va - vb);
+  });
+}
+function setSort(key) {
+  if (sortKey === key) sortDir *= -1;
+  else { sortKey = key; sortDir = 1; }
+  renderHoldings(allHoldings);
+}
+function sortIcon(key) {
+  if (sortKey !== key) return '';
+  return sortDir === 1 ? ' ▲' : ' ▼';
+}
 
 function toast(m,t){const e=document.getElementById('toast');e.textContent=m;e.className='toast '+t+' show';setTimeout(()=>e.classList.remove('show'),3000)}
 
@@ -275,6 +317,75 @@ function renderCategoryPnl(holdings){
   });
 }
 
+// ── Tab 切换 ──────────────────────────────────────────────
+function switchTab(tab){
+  document.getElementById('dashboardView').style.display=tab==='dashboard'?'block':'none';
+  document.getElementById('reportsView').style.display=tab==='reports'?'block':'none';
+  const db=document.getElementById('tabDashboard'), rp=document.getElementById('tabReports');
+  if(tab==='dashboard'){db.style.background='#1f6feb';db.style.color='#fff';rp.style.background='#21262d';rp.style.color='#c9d1d9'}
+  else{rp.style.background='#1f6feb';rp.style.color='#fff';db.style.background='#21262d';db.style.color='#c9d1d9';loadReports()}
+}
+
+// ── 日报 ──────────────────────────────────────────────────
+async function loadReports(){
+  const c=document.getElementById('reportsView').querySelector('.table-container');
+  document.getElementById('reportsLoading').style.display='block';
+  try{
+    const r=await fetch('/api/reports'), reports=await r.json();
+    document.getElementById('reportsLoading').style.display='none';
+    if(!reports||!reports.length){c.innerHTML='<div class=table-header><h3>📰 历史日报</h3></div><div style=padding:40px;text-align:center;color:#8b949e>暂无日报记录</div>';return}
+    document.getElementById('reportsCount').textContent='共 '+reports.length+' 篇';
+    let rows='';
+    for(const rp of reports){
+      const d=rp.date.length===8?rp.date.slice(0,4)+'-'+rp.date.slice(4,6)+'-'+rp.date.slice(6,8):rp.date;
+      rows+=`<tr class=clickable onclick=openReport('${rp.filename}')>
+        <td><b>${esc(rp.title||'日报')}</b></td>
+        <td>${d}</td>
+        <td class=text-right>${(rp.size/1024).toFixed(1)} KB</td>
+      </tr>`
+    }
+    const old=c.querySelector('table');if(old)old.remove();
+    const tbl=document.createElement('table');
+    tbl.innerHTML='<thead><tr><th>标题</th><th>日期</th><th class=text-right>大小</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    c.appendChild(tbl);
+  }catch(e){document.getElementById('reportsLoading').innerHTML='<div class=loading>加载失败</div>'}
+}
+
+async function openReport(filename){
+  document.getElementById('reportDetail').classList.add('show');
+  document.getElementById('reportTitle').textContent='📰 '+filename;
+  document.getElementById('reportContent').textContent='加载中...';
+  try{
+    const r=await fetch('/api/reports/'+filename), d=await r.json();
+    document.getElementById('reportContent').textContent=d.content
+  }catch(e){document.getElementById('reportContent').textContent='加载失败'}
+}
+function closeReport(){document.getElementById('reportDetail').classList.remove('show')}
+
+// ── CSV 导出 ──────────────────────────────────────────────
+function exportCSV(){
+  if(!allHoldings||!allHoldings.length){toast('暂无持仓数据可导出','error');return}
+  const headers=['基金代码','基金名称','份数','投入金额','当前市值','盈亏','盈亏%','净值','备注'];
+  const rows=allHoldings.map(h=>[
+    h.fund_code,
+    h.fund_name,
+    h.shares||0,
+    h.cost_basis||0,
+    h.current_value||0,
+    h.pnl||0,
+    h.pnl_pct||0,
+    h.current_nav||0,
+    h.note||''
+  ]);
+  const csv=[headers.join(','),...rows.map(r=>r.join(','))].join('\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='etf_portfolio_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+  toast('✅ CSV 已下载','success')
+}
+
 async function loadFromCache(){
   loadFundList();
   try{
@@ -325,6 +436,7 @@ function renderChart(history){
 function renderHoldings(holdings){
   document.getElementById('holdingsLoading').style.display='none';
   const c=document.getElementById('holdingsTable');
+  holdings = sorted(holdings);
   if(!holdings||!holdings.length){
     let h=c.querySelector('.table-header');c.innerHTML='';c.appendChild(h);
     c.innerHTML+='<div style=padding:40px;text-align:center;color:#8b949e>暂无持仓数据</div>';return}
@@ -354,7 +466,16 @@ function renderHoldings(holdings){
   c.querySelector('.table-header span').textContent='共 '+holdings.length+' 只基金';
   const old=c.querySelector('table');if(old)old.remove();
   const tbl=document.createElement('table');
-  tbl.innerHTML=`<thead><tr><th>基金</th><th class=text-right>份数</th><th class=text-right>投入(¥)</th><th class=text-right>市值(¥)</th><th class=text-right>盈亏(¥)</th><th class=text-right>盈亏%</th><th class=text-right>净值</th><th class=text-right style=width:60px>操作</th></tr></thead><tbody>${rows}</tbody></table>`;
+  tbl.innerHTML='<thead><tr>'+
+    '<th class=clickable onclick=setSort("fund_name")>基金'+sortIcon('fund_name')+'</th>'+
+    '<th class="clickable text-right" onclick=setSort("shares")>份数'+sortIcon('shares')+'</th>'+
+    '<th class="clickable text-right" onclick=setSort("cost_basis")>投入(¥)'+sortIcon('cost_basis')+'</th>'+
+    '<th class="clickable text-right" onclick=setSort("current_value")>市值(¥)'+sortIcon('current_value')+'</th>'+
+    '<th class="clickable text-right" onclick=setSort("pnl")>盈亏(¥)'+sortIcon('pnl')+'</th>'+
+    '<th class="clickable text-right" onclick=setSort("pnl_pct")>盈亏%'+sortIcon('pnl_pct')+'</th>'+
+    '<th class=text-right>净值</th>'+
+    '<th class=text-right style=width:60px>操作</th>'+
+  '</tr></thead><tbody>'+rows+'</tbody></table>';
   c.appendChild(tbl)
 }
 

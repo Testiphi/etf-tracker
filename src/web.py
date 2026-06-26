@@ -252,6 +252,48 @@ async def remove_plan(plan_id: int):
     return {"status": "ok"}
 
 
+# ── API: 日报列表 ───────────────────────────────────────
+
+_REPORT_DIR = _PROJ / "data"
+
+
+@app.get("/api/reports")
+async def list_reports():
+    """列出所有日报"""
+    if not _REPORT_DIR.exists():
+        return []
+    files = sorted(_REPORT_DIR.glob("report_*.md"), reverse=True)
+    result = []
+    for f in files[:30]:  # 最多 30 条
+        try:
+            lines = f.read_text(encoding="utf-8").split("\n")
+            # 提取标题行
+            title = ""
+            for line in lines:
+                line = line.strip()
+                if line.startswith("## "):
+                    title = line.replace("## ", "").strip()
+                    break
+            result.append({
+                "filename": f.name,
+                "date": f.stem.replace("report_", ""),
+                "title": title or f.name,
+                "size": f.stat().st_size,
+            })
+        except Exception:
+            pass
+    return result
+
+
+@app.get("/api/reports/{filename}")
+async def get_report(filename: str):
+    """获取单篇日报内容"""
+    path = _REPORT_DIR / filename
+    if not path.exists() or not path.name.startswith("report_") or not path.name.endswith(".md"):
+        raise HTTPException(status_code=404, detail="Report not found")
+    return {"content": path.read_text(encoding="utf-8")}
+
+
 @app.get("/api/funds")
 async def list_funds():
     """配置中的基金列表"""
