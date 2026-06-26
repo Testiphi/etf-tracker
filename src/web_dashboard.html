@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang=zh-CN>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset=UTF-8>
+<meta name=viewport content="width=device-width,initial-scale=1.0">
 <title>ETF Tracker 仪表盘</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src=https://cdn.jsdelivr.net/npm/chart.js@4></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f1117;color:#e1e4e8}
@@ -16,8 +16,10 @@ header h1{font-size:22px;color:#f0f6fc}header h1 span{color:#58a6ff}.header-meta
 .card-label{font-size:12px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
 .card-value{font-size:26px;font-weight:700}.card-value.green{color:#3fb950}.card-value.red{color:#f85149}
 .chart-container{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px;margin-bottom:24px}
-.chart-container h3{font-size:15px;margin-bottom:16px;color:#f0f6fc}
-.chart-wrapper{position:relative;height:320px}
+.chart-container h3{font-size:15px;margin-bottom:16px;color:#f0f6fc}.chart-wrapper{position:relative;height:320px}
+.chart-half{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+@media(max-width:768px){.chart-half{grid-template-columns:1fr}}
+.chart-half .chart-container{margin-bottom:0}
 .table-container{background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden;margin-bottom:24px}
 .table-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:16px 20px;border-bottom:1px solid #30363d}
 .table-header h3{font-size:15px;color:#f0f6fc}
@@ -25,7 +27,8 @@ table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:10px 12px;font-size:12px;color:#8b949e;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid #21262d;white-space:nowrap}
 td{padding:10px 12px;font-size:13px;border-bottom:1px solid #21262d}
 tr:hover td{background:#1c2128}
-.text-right{text-align:right}.text-green{color:#3fb950}.text-red{color:#f85149}.text-muted{color:#8b949e}.bold{font-weight:600}
+tr.selected td{background:#1f6feb22;border-left:2px solid #58a6ff}
+.text-right{text-align:right}.text-green{color:#3fb950}.text-red{color:#f85149}.text-muted{color:#8b949e}.bold{font-weight:600}.clickable{cursor:pointer}
 .loading{text-align:center;padding:60px 20px;color:#8b949e}
 .loading .spinner{width:36px;height:36px;border:3px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -39,7 +42,7 @@ tr:hover td{background:#1c2128}
 .btn-del:hover{border-color:#f85149;color:#f85149}
 .modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center}
 .modal-overlay.show{display:flex}
-.modal{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:24px;width:90%;max-width:460px;max-height:90vh;overflow-y:auto}
+.modal{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:24px;width:90%;max-width:520px;max-height:90vh;overflow-y:auto}
 .modal h2{font-size:17px;color:#f0f6fc;margin-bottom:20px}
 .form-group{margin-bottom:16px}
 .form-group label{display:block;font-size:12px;color:#8b949e;margin-bottom:4px}
@@ -54,318 +57,326 @@ tr:hover td{background:#1c2128}
 .badge-manual{background:#1f6feb22;color:#58a6ff;border:1px solid #1f6feb44}
 .badge-auto{background:#8b949e22;color:#8b949e}
 .section-gap{margin-top:24px}
-@media(max-width:768px){.cards{grid-template-columns:1fr 1fr}.table-container{overflow-x:auto}.form-row{grid-template-columns:1fr}}
+.fund-detail{display:none;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px;margin-bottom:24px}
+.fund-detail.show{display:block}
+.fund-detail h4{font-size:14px;color:#f0f6fc;margin-bottom:12px}
+.fund-detail .close-detail{float:right;background:transparent;border:none;color:#8b949e;cursor:pointer;font-size:18px}
+.fund-detail .close-detail:hover{color:#f0f6fc}
 </style>
 </head>
 <body>
-<div class="container">
+<div class=container>
   <header>
     <h1>📊 <span>ETF</span> Tracker</h1>
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <span class="header-meta" id="headerMeta">加载中...</span>
-      <button class="btn btn-primary" onclick="refreshData()" id="refreshBtn">🔄 刷新数据</button>
+    <div style=display:flex;align-items:center;gap:12px;flex-wrap:wrap>
+      <span class=header-meta id=headerMeta>加载中...</span>
+      <button class="btn btn-primary" onclick=refreshData() id=refreshBtn>🔄 刷新数据</button>
     </div>
   </header>
 
-  <div class="cards" id="summaryCards">
-    <div class="card"><div class="card-label">总投入</div><div class="card-value" id="totalCost">—</div></div>
-    <div class="card"><div class="card-label">总市值</div><div class="card-value" id="totalValue">—</div></div>
-    <div class="card"><div class="card-label">总盈亏</div><div class="card-value" id="totalPnl">—</div></div>
-    <div class="card"><div class="card-label">数据时效</div><div class="card-value" id="dataFresh" style="font-size:15px">—</div></div>
+  <div class=cards id=summaryCards>
+    <div class=card><div class=card-label>总投入</div><div class=card-value id=totalCost>—</div></div>
+    <div class=card><div class=card-label>总市值</div><div class=card-value id=totalValue>—</div></div>
+    <div class=card><div class=card-label>总盈亏</div><div class=card-value id=totalPnl>—</div></div>
+    <div class=card><div class=card-label>数据时效</div><div class=card-value id=dataFresh style=font-size:15px>—</div></div>
   </div>
 
   <div class="chart-container">
     <h3>📈 组合净值走势</h3>
-    <div class="chart-wrapper"><canvas id="portfolioChart"></canvas></div>
+    <div class=chart-wrapper><canvas id=portfolioChart></canvas></div>
   </div>
 
-  <div class="table-container" id="holdingsTable">
-    <div class="table-header">
-      <h3>📦 持仓明细</h3>
-      <div style="display:flex;gap:8px;align-items:center">
-        <span class="text-muted" id="holdingsCount" style="font-size:13px"></span>
+  <!-- 详情面板：点击某只基金后展开 -->
+  <div class=fund-detail id=fundDetail>
+    <button class=close-detail onclick=closeFundDetail()>✕</button>
+    <h4 id=fundDetailTitle>基金详情</h4>
+    <div class=chart-wrapper style=height:220px><canvas id=fundDetailChart></canvas></div>
+  </div>
+
+  <!-- 双图表：配置饼图 + 组合走势 -->
+  <div class=chart-half>
+    <div class=chart-container>
+      <h3>🥧 资产配置</h3>
+      <div class=chart-wrapper style=height:280px><canvas id=pieChart></canvas></div>
+    </div>
+    <div class=chart-container>
+      <h3>📊 大类盈亏</h3>
+      <div class=chart-wrapper style=height:280px><canvas id=categoryPnlChart></canvas></div>
+    </div>
+  </div>
+
+  <div class=table-container id=holdingsTable>
+    <div class=table-header>
+      <h3>📦 持仓明细 <span style=font-size:12px;color:#8b949e;font-weight:400>（点击查看走势）</span></h3>
+      <div style=display:flex;gap:8px;align-items:center>
+        <span class=text-muted id=holdingsCount style=font-size:13px></span>
         <button class="btn btn-sm btn-primary" onclick="openModal('holding')">➕ 新增</button>
       </div>
     </div>
-    <div class="loading" id="holdingsLoading"><div class="spinner"></div><div>正在加载数据...</div></div>
+    <div class=loading id=holdingsLoading><div class=spinner></div><div>正在加载数据...</div></div>
   </div>
 
-  <div class="table-container section-gap" id="plansTable">
-    <div class="table-header">
+  <div class="table-container section-gap" id=plansTable>
+    <div class=table-header>
       <h3>📅 定投计划</h3>
-      <div style="display:flex;gap:8px;align-items:center">
-        <span class="text-muted" id="plansCount" style="font-size:13px"></span>
+      <div style=display:flex;gap:8px;align-items:center>
+        <span class=text-muted id=plansCount style=font-size:13px></span>
         <button class="btn btn-sm btn-primary" onclick="openModal('plan')">➕ 新增</button>
       </div>
     </div>
-    <div class="loading" id="plansLoading" style="display:none"><div class="spinner"></div></div>
   </div>
 </div>
 
-<!-- 编辑 Modal -->
-<div class="modal-overlay" id="editModal">
-  <div class="modal">
-    <h2 id="modalTitle">编辑</h2>
-    <input type="hidden" id="editType" value="">
-    <input type="hidden" id="editId" value="">
-
-    <div class="form-group">
-      <label>基金代码</label>
-      <select id="editCode"></select>
-    </div>
-    <div id="modalFields"></div>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal()">取消</button>
-      <button class="btn btn-primary" onclick="saveModal()">💾 保存</button>
+<!-- Edit Modal -->
+<div class=modal-overlay id=editModal>
+  <div class=modal>
+    <h2 id=modalTitle>编辑</h2>
+    <input type=hidden id=editType><input type=hidden id=editId>
+    <div class=form-group><label>基金代码</label><select id=editCode></select></div>
+    <div id=modalFields></div>
+    <div class=modal-actions>
+      <button class=btn onclick=closeModal()>取消</button>
+      <button class="btn btn-primary" onclick=saveModal()>💾 保存</button>
     </div>
   </div>
 </div>
-
-<div class="toast" id="toast"></div>
+<div class=toast id=toast></div>
 
 <script>
-let portfolioChart = null, isRefreshing = false;
+let portfolioChart, pieChart, catPnlChart, fundDetailChart, isRefreshing = false;
+let allHoldings = [];
 
-function toast(msg,type){const e=document.getElementById('toast');e.textContent=msg;e.className='toast '+type+' show';setTimeout(()=>e.classList.remove('show'),3000)}
+function toast(m,t){const e=document.getElementById('toast');e.textContent=m;e.className='toast '+t+' show';setTimeout(()=>e.classList.remove('show'),3000)}
 
-// ── Modal ────────────────────────────────────────────
-const HOLDING_FIELDS = `
-<div class="form-row">
-  <div class="form-group">
-    <label>持有份数</label>
-    <input type="number" id="f1" step="0.0001" min="0" placeholder="0">
-    <div class="form-hint">手动填写的份数会覆盖自动计算值</div>
-  </div>
-  <div class="form-group">
-    <label>投入金额 (¥)</label>
-    <input type="number" id="f2" step="0.01" min="0" placeholder="0">
-    <div class="form-hint">总买入成本，用于计算盈亏</div>
-  </div>
-</div>
-<div class="form-group">
-  <label>备注</label>
-  <input type="text" id="f3" placeholder="例如：定投/手动买入">
-</div>`;
+const CATEGORY_MAP = [
+  {name:'黄金', match:/黄金|金[^融]/, color:'#f0b429'},
+  {name:'债券', match:/债券|弘利|招享|景颐/, color:'#34d399'},
+  {name:'A股量化', match:/量化/, color:'#60a5fa'},
+  {name:'A股指数', match:/上证指数|中证A500|沪深300|科创50|中证500/, color:'#a78bfa'},
+  {name:'QDII 美股', match:/标普500|纳斯达克/, color:'#f472b6'},
+  {name:'QDII 港股', match:/恒生|港股/, color:'#fb923c'},
+];
+function classifyFund(name) {
+  for (const c of CATEGORY_MAP) if (c.match.test(name)) return c.name;
+  return '其他';
+}
 
-const PLAN_FIELDS = `
-<div class="form-row">
-  <div class="form-group">
-    <label>每日定投金额 (¥)</label>
-    <input type="number" id="f1" step="0.01" min="0" placeholder="10">
-  </div>
-  <div class="form-group">
-    <label>周期</label>
-    <select id="f2">
-      <option value="daily">每日</option>
-      <option value="weekly">每周</option>
-      <option value="monthly">每月</option>
-    </select>
-  </div>
-</div>
-<div class="form-group">
-  <label>备注</label>
-  <input type="text" id="f3" placeholder="例如：低估区间加大定投">
-</div>`;
+const HOLD_FIELDS='<div class=form-row><div class=form-group><label>持有份数</label><input type=number id=f1 step=0.0001 min=0></div><div class=form-group><label>投入金额 (¥)</label><input type=number id=f2 step=0.01 min=0></div></div><div class=form-group><label>备注</label><input type=text id=f3></div>';
+const PLAN_FIELDS='<div class=form-row><div class=form-group><label>每日定投 (¥)</label><input type=number id=f1 step=0.01 min=0></div><div class=form-group><label>周期</label><select id=f2><option value=daily>每日</option><option value=weekly>每周</option><option value=monthly>每月</option></select></div></div><div class=form-group><label>备注</label><input type=text id=f3></div>';
 
-function openModal(type, data) {
-  document.getElementById('editType').value = type;
-  const title = type === 'holding' ? '📦 编辑持仓' : '📅 编辑定投';
-  document.getElementById('modalTitle').textContent = data ? title : '➕ 新增' + (type==='holding'?'持仓':'定投');
-  document.getElementById('editId').value = data ? (data.id||'') : '';
-  document.getElementById('modalFields').innerHTML = type === 'holding' ? HOLDING_FIELDS : PLAN_FIELDS;
-  if (data) {
-    document.getElementById('editCode').value = data.fund_code||'';
-    if (type==='holding') {
-      document.getElementById('f1').value = data.shares>0 ? data.shares : '';
-      document.getElementById('f2').value = data.cost_basis>0 ? data.cost_basis : '';
-      document.getElementById('f3').value = data.note||'';
-    } else {
-      document.getElementById('f1').value = data.amount>0 ? data.amount : '';
-      document.getElementById('f2').value = data.period||'daily';
-      document.getElementById('f3').value = data.note||'';
+function openModal(type,data){
+  document.getElementById('editType').value=type;
+  document.getElementById('modalTitle').textContent=data?'✏️ 编辑':'➕ 新增'+(type==='holding'?'持仓':'定投');
+  document.getElementById('editId').value=data?(data.id||''):'';
+  document.getElementById('modalFields').innerHTML=type==='holding'?HOLD_FIELDS:PLAN_FIELDS;
+  const sel=document.getElementById('editCode');
+  if(data)sel.value=data.fund_code||'';
+  else sel.value='';
+  for(let i=1;i<=3;i++){
+    const el=document.getElementById('f'+i);
+    if(el){
+      if(type==='holding'){if(i===1)el.value=data?data.shares||'':'';if(i===2)el.value=data?data.cost_basis||'':'';if(i===3)el.value=data?data.note||'':''}
+      else{if(i===1)el.value=data?data.amount||'':'';if(i===2)el.value=data?data.period||'daily':'daily';if(i===3)el.value=data?data.note||'':''}
     }
-  } else {
-    document.getElementById('editCode').value = '';
-    document.getElementById('f1').value = '';
-    document.getElementById('f2').value = type==='plan' ? 'daily' : '';
-    document.getElementById('f3').value = '';
   }
   document.getElementById('editModal').classList.add('show');
 }
 function closeModal(){document.getElementById('editModal').classList.remove('show')}
 document.getElementById('editModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal()});
 
-async function saveModal() {
-  const type = document.getElementById('editType').value;
-  const code = document.getElementById('editCode').value;
-  if (!code) { toast('请选择基金代码','error'); return }
-  const f1 = parseFloat(document.getElementById('f1').value)||0;
-  const f2 = document.getElementById('f2').value;
-  const f3 = document.getElementById('f3').value||'';
+async function saveModal(){
+  const type=document.getElementById('editType').value, code=document.getElementById('editCode').value;
+  if(!code){toast('请选择基金代码','error');return}
+  const f1=parseFloat(document.getElementById('f1').value)||0, f2=document.getElementById('f2').value, f3=document.getElementById('f3').value||'';
+  const payload=type==='holding'?
+    {fund_code:code,shares:f1,cost_basis:parseFloat(f2)||0,purchase_date:'',note:f3}:
+    {fund_code:code,amount:f1,period:isNaN(f2)?f2:'daily',note:f3};
+  try{
+    const r=await fetch('/api/'+(type==='holding'?'holdings':'plans'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok)throw Error('Save failed');
+    toast('✅ 已保存（刷新后生效）','success');closeModal()
+  }catch(e){toast('❌ 保存失败: '+e.message,'error')}
+}
 
-  let url, payload;
-  if (type === 'holding') {
-    url = '/api/holdings';
-    payload = {fund_code:code, fund_name:'', shares:f1, cost_basis:parseFloat(f2)||0, purchase_date:'', note:f3};
-  } else {
-    url = '/api/plans';
-    payload = {fund_code:code, fund_name:'', amount:f1, period:isNaN(f2)?f2:'daily', note:f3};
+async function delItem(type,id,name){
+  if(!confirm('确定删除 '+name+' 的记录？'))return;
+  try{
+    const r=await fetch('/api/'+(type==='holding'?'holdings':'plans')+'/'+id,{method:'DELETE'});
+    if(!r.ok)throw Error();
+    toast('🗑️ 已删除','success');loadFromCache()
+  }catch(e){toast('❌ 删除失败','error')}
+}
+
+async function loadFundList(){
+  try{
+    const r=await fetch('/api/funds'), funds=await r.json();
+    document.getElementById('editCode').innerHTML='<option value="">— 选择基金 —</option>'+
+      funds.map(f=>`<option value="${f.code}">${esc(f.name)} (${f.code})</option>`).join('')
+  }catch(e){console.error(e)}
+}
+
+// 点击某只基金显示详情走势
+async function showFundDetail(code,name){
+  const panel=document.getElementById('fundDetail');
+  document.getElementById('fundDetailTitle').textContent='📈 '+name+' ('+code+') 净值走势';
+  panel.classList.add('show');
+  try{
+    const r=await fetch('/api/history/'+code+'?days=90');
+    const hist=await r.json();
+    const d=hist[code]||{dates:[],values:[]};
+    const ctx=document.getElementById('fundDetailChart').getContext('2d');
+    if(fundDetailChart)fundDetailChart.destroy();
+    if(!d.dates||d.dates.length<2){fundDetailChart=new Chart(ctx,{type:'line',data:{labels:['暂无'],datasets:[{data:[0]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});return}
+    const base=d.values[0];
+    fundDetailChart=new Chart(ctx,{
+      type:'line',
+      data:{labels:d.dates,datasets:[{label:name,data:d.values,borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:2}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1c2128',titleColor:'#f0f6fc',bodyColor:'#e1e4e8',borderColor:'#30363d',borderWidth:1}},scales:{x:{grid:{color:'#21262d',drawBorder:false},ticks:{color:'#8b949e',maxTicksLimit:8}},y:{grid:{color:'#21262d',drawBorder:false},ticks:{color:'#8b949e'}}}}});
+    document.getElementById('fundDetail').scrollIntoView({behavior:'smooth',block:'nearest'})
+  }catch(e){toast('走势加载失败','error')}
+}
+function closeFundDetail(){document.getElementById('fundDetail').classList.remove('show')}
+
+// 图表渲染
+function renderPieChart(holdings){
+  const cats={};
+  for(const h of holdings){
+    const cat=classifyFund(h.fund_name);
+    cats[cat]=(cats[cat]||0)+h.current_value
   }
-
-  try {
-    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-    if (!r.ok) throw new Error('Save failed');
-    toast('✅ 已保存（刷新后生效）','success');
-    closeModal();
-  } catch(e) { toast('❌ 保存失败: '+e.message,'error') }
+  const labels=Object.keys(cats), values=Object.values(cats), colors=labels.map(l=>{const c=CATEGORY_MAP.find(x=>x.name===l);return c?c.color:'#6b7280'});
+  const ctx=document.getElementById('pieChart').getContext('2d');
+  if(pieChart)pieChart.destroy();
+  pieChart=new Chart(ctx,{
+    type:'doughnut',
+    data:{labels,datasets:[{data:values,backgroundColor:colors,borderColor:'#161b22',borderWidth:3}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#8b949e',font:{size:12},padding:12,usePointStyle:true,pointStyle:'circle'}},tooltip:{backgroundColor:'#1c2128',titleColor:'#f0f6fc',bodyColor:'#e1e4e8',callbacks:{label:ctx=>{const t=ctx.parsed;const p=t/values.reduce((a,b)=>a+b,0)*100;return ctx.label+': ¥'+fmt(t)+' ('+p.toFixed(1)+'%)'}}}}}}
+  });
 }
 
-async function delItem(type, id, name) {
-  if (!confirm('确定删除 ' + name + ' 的记录？')) return;
-  try {
-    const r = await fetch('/api/'+(type==='holding'?'holdings':'plans')+'/'+id, {method:'DELETE'});
-    if (!r.ok) throw new Error('Delete failed');
-    toast('🗑️ 已删除','success');
-    loadFromCache();
-  } catch(e) { toast('❌ 删除失败: '+e.message,'error') }
+function renderCategoryPnl(holdings){
+  const cats={cost:{},value:{}};
+  for(const h of holdings){
+    const cat=classifyFund(h.fund_name);
+    cats.cost[cat]=(cats.cost[cat]||0)+h.cost_basis;
+    cats.value[cat]=(cats.value[cat]||0)+h.current_value
+  }
+  const labels=Object.keys(cats.cost);
+  const colors=labels.map(l=>{const c=CATEGORY_MAP.find(x=>x.name===l);return c?c.color:'#6b7280'});
+  const ctx=document.getElementById('categoryPnlChart').getContext('2d');
+  if(catPnlChart)catPnlChart.destroy();
+  catPnlChart=new Chart(ctx,{
+    type:'bar',
+    data:{labels,datasets:[
+      {label:'投入',data:labels.map(l=>cats.cost[l]||0),backgroundColor:'#30363d',borderRadius:4},
+      {label:'市值',data:labels.map(l=>cats.value[l]||0),backgroundColor:colors,borderRadius:4}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8b949e',font:{size:11},usePointStyle:true,pointStyle:'rectRounded'}},tooltip:{backgroundColor:'#1c2128',titleColor:'#f0f6fc',bodyColor:'#e1e4e8',callbacks:{label:ctx=>ctx.dataset.label+': ¥'+fmt(ctx.parsed.y)}}},scales:{x:{grid:{color:'#21262d',drawBorder:false},ticks:{color:'#8b949e'}},y:{grid:{color:'#21262d',drawBorder:false},ticks:{color:'#8b949e',callback:v=>'¥'+fmt(v)}}}}}
+  });
 }
 
-// ── 加载基金列表 ──────────────────────────────────────
-async function loadFundList() {
-  try {
-    const r = await fetch('/api/funds');
-    const funds = await r.json();
-    document.getElementById('editCode').innerHTML = '<option value="">— 选择基金 —</option>' +
-      funds.map(f=>`<option value="${f.code}">${esc(f.name)} (${f.code})</option>`).join('');
-  } catch(e) { console.error(e) }
-}
-
-// ── 加载数据 ──────────────────────────────────────────
-async function loadFromCache() {
+async function loadFromCache(){
   loadFundList();
-  try {
-    const [pRes, hRes] = await Promise.all([
-      fetch('/api/portfolio'), fetch('/api/history/portfolio?days=60')
-    ]);
-    if (!pRes.ok) throw new Error('API error');
-    const p = await pRes.json();
-    if (p.status==='waiting') {
-      document.getElementById('holdingsLoading').innerHTML='<div class="loading">⏳ 首次获取中（30-60s），请稍后刷新...</div>';
-      return;
-    }
-    const h = await hRes.json();
-    renderAll(p, h);
-  } catch(e) {
-    document.getElementById('holdingsLoading').innerHTML='<div class="loading">暂无缓存数据，点击「刷新数据」</div>';
+  try{
+    const [pRes,hRes]=await Promise.all([fetch('/api/portfolio'),fetch('/api/history/portfolio?days=60')]);
+    if(!pRes.ok)throw Error();
+    const p=await pRes.json();
+    if(p.status==='waiting'){document.getElementById('holdingsLoading').innerHTML='<div class=loading>⏳ 首次获取中，请稍后刷新...</div>';return}
+    const h=await hRes.json();
+    allHoldings=p.holdings||[];
+    renderAll(p,h)
+  }catch(e){
+    document.getElementById('holdingsLoading').innerHTML='<div class=loading>暂无缓存，点击「刷新数据」</div>'
   }
 }
 
-async function refreshData() {
-  if(isRefreshing) return;
-  isRefreshing=true; const btn=document.getElementById('refreshBtn');
-  btn.disabled=true; btn.textContent='⏳ 获取中...';
+async function refreshData(){
+  if(isRefreshing)return;isRefreshing=true;
+  const btn=document.getElementById('refreshBtn');btn.disabled=true;btn.textContent='⏳ 获取中...';
   document.getElementById('holdingsLoading').style.display='block';
-  try {
-    const r=await fetch('/api/refresh',{method:'POST'});
-    const j=await r.json();
-    toast('✅ 刷新完成 · '+j.fetched+' · '+j.date,'success');
-    await loadFromCache();
-  } catch(e) { toast('❌ 刷新失败: '+e.message,'error') }
-  finally { isRefreshing=false; btn.disabled=false; btn.textContent='🔄 刷新数据' }
+  try{
+    const r=await fetch('/api/refresh',{method:'POST'}),j=await r.json();
+    toast('✅ 刷新完成 · '+j.fetched+' · '+j.date,'success');await loadFromCache()
+  }catch(e){toast('❌ 刷新失败','error')}
+  finally{isRefreshing=false;btn.disabled=false;btn.textContent='🔄 刷新数据'}
 }
 
-function renderAll(p, h) {
-  const pc = p.total_pnl>=0?'green':'red';
+function renderAll(p,h){
+  const pc=p.total_pnl>=0?'green':'red';
   document.getElementById('totalCost').textContent='¥'+fmt(p.total_cost);
   document.getElementById('totalValue').textContent='¥'+fmt(p.total_value);
   document.getElementById('totalPnl').textContent=(p.total_pnl>=0?'+':'')+'¥'+fmt(p.total_pnl)+' ('+(p.total_pnl_pct>=0?'+':'')+p.total_pnl_pct.toFixed(2)+'%)';
   document.getElementById('totalPnl').className='card-value '+pc;
   document.getElementById('dataFresh').textContent=(p.date||'').split(' ')[0];
   document.getElementById('headerMeta').textContent='📅 '+(p.date||'').split(' ')[0]+' · '+p.fetched_count+'/'+p.funds_count;
-  renderChart(h);
-  renderHoldings(p.holdings||[]);
-  renderPlans(p.plans||[]);
+  renderChart(h);renderPieChart(p.holdings||[]);renderCategoryPnl(p.holdings||[]);
+  renderHoldings(p.holdings||[]);renderPlans(p.plans||[])
 }
 
-function renderChart(history) {
+function renderChart(history){
   const ctx=document.getElementById('portfolioChart').getContext('2d');
-  if(portfolioChart) portfolioChart.destroy();
-  if(!history.dates||history.dates.length<2){
-    portfolioChart=new Chart(ctx,{type:'line',data:{labels:['暂无数据'],datasets:[{data:[0],borderColor:'#58a6ff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
-    return}
+  if(portfolioChart)portfolioChart.destroy();
+  if(!history.dates||history.dates.length<2){portfolioChart=new Chart(ctx,{type:'line',data:{labels:['暂无'],datasets:[{data:[0],borderColor:'#58a6ff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});return}
   portfolioChart=new Chart(ctx,{
-    type:'line',
-    data:{labels:history.dates,datasets:[{label:'组合净值',data:history.values,borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:2}]},
+    type:'line',data:{labels:history.dates,datasets:[{label:'组合净值',data:history.values,borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:2}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1c2128',titleColor:'#f0f6fc',bodyColor:'#e1e4e8',borderColor:'#30363d',borderWidth:1,callbacks:{label:ctx=>ctx.parsed.y.toFixed(2)+'%'}}},scales:{x:{grid:{color:'#21262d',drawBorder:false},ticks:{color:'#8b949e',maxTicksLimit:10}},y:{grid:{color:'#21262d',drawBorder:false},ticks:{color:'#8b949e',callback:v=>v.toFixed(1)+'%'}}}}});
 }
 
-function renderHoldings(holdings) {
-  const c=document.getElementById('holdingsTable');
+function renderHoldings(holdings){
   document.getElementById('holdingsLoading').style.display='none';
+  const c=document.getElementById('holdingsTable');
   if(!holdings||!holdings.length){
-    let t=c.querySelector('.table-header'); c.innerHTML=''; c.appendChild(t);
-    c.innerHTML+='<div style="padding:40px;text-align:center;color:#8b949e">暂无持仓数据</div>';
-    return}
+    let h=c.querySelector('.table-header');c.innerHTML='';c.appendChild(h);
+    c.innerHTML+='<div style=padding:40px;text-align:center;color:#8b949e>暂无持仓数据</div>';return}
   let rows='';
   for(const h of holdings){
-    const pnlc=h.pnl>=0?'text-green':'text-red', sign=h.pnl>=0?'+':'';
+    const pnlc=h.pnl>=0?'text-green':'text-red',sign=h.pnl>=0?'+':'';
     const pnlStr=(h.pnl===0&&h.pnl_pct===0)?'—':sign+'¥'+fmt(h.pnl);
     const pnlPct=(h.pnl===0&&h.pnl_pct===0)?'—':sign+h.pnl_pct.toFixed(2)+'%';
     const badge=h.note||h.cost_basis>0?'<span class="badge badge-manual">手动</span>':'<span class="badge badge-auto">自动</span>';
-    const note=h.note?' · '+esc(h.note):'';
-    rows+=`<tr>
-      <td><div><b>${esc(h.fund_name)}</b> ${badge}</div><span class="text-muted" style="font-size:11px">${h.fund_code}${note}</span></td>
-      <td class="text-right">${h.shares>0?h.shares.toFixed(4):'—'}</td>
-      <td class="text-right">${h.cost_basis>0?'¥'+fmt(h.cost_basis):'—'}</td>
-      <td class="text-right">${h.current_value>0?'¥'+fmt(h.current_value):'—'}</td>
+    const cat=classifyFund(h.fund_name);
+    const catChip=CATEGORY_MAP.find(x=>x.name===cat);
+    const chipColor=catChip?catChip.color:'#6b7280';
+    rows+=`<tr class=clickable onclick="showFundDetail('${h.fund_code}','${escAttr(h.fund_name)}')">
+      <td><div><b>${esc(h.fund_name)}</b> ${badge}</div><span class=text-muted style=font-size:11px>${h.fund_code} · <span style=color:${chipColor}>${cat}</span>${h.note?' · '+esc(h.note):''}</span></td>
+      <td class=text-right>${h.shares>0?h.shares.toFixed(4):'—'}</td>
+      <td class=text-right>${h.cost_basis>0?'¥'+fmt(h.cost_basis):'—'}</td>
+      <td class=text-right>${h.current_value>0?'¥'+fmt(h.current_value):'—'}</td>
       <td class="text-right ${pnlc} bold">${pnlStr}</td>
       <td class="text-right ${pnlc} bold">${pnlPct}</td>
-      <td class="text-right">${h.current_nav>0?h.current_nav.toFixed(4):'—'}</td>
-      <td class="text-right" style="white-space:nowrap">
-        <button class="btn-edit" onclick='openModal("holding",${JSON.stringify(h).replace(/'/g,"&#39;")})'>✏️</button>
-        <button class="btn-del" onclick='delItem("holding",${h.id},"${escAttr(h.fund_name)}")' ${h.id?'':'disabled style="opacity:.3"'}>🗑️</button>
+      <td class=text-right>${h.current_nav>0?h.current_nav.toFixed(4):'—'}</td>
+      <td class=text-right style=white-space:nowrap>
+        <button class=btn-edit onclick="event.stopPropagation();openModal('holding',${JSON.stringify(h).replace(/'/g,"&#39;")})">✏️</button>
+        <button class=btn-del onclick="event.stopPropagation();delItem('holding',${h.id},'${escAttr(h.fund_name)}')" ${h.id?'':'disabled style=opacity:.3'}>🗑️</button>
       </td>
-    </tr>`;
+    </tr>`
   }
   c.querySelector('.table-header span').textContent='共 '+holdings.length+' 只基金';
-  const old=c.querySelector('table'); if(old) old.remove();
+  const old=c.querySelector('table');if(old)old.remove();
   const tbl=document.createElement('table');
-  tbl.innerHTML=`<thead><tr><th>基金</th><th class="text-right">份数</th><th class="text-right">投入(¥)</th><th class="text-right">市值(¥)</th><th class="text-right">盈亏(¥)</th><th class="text-right">盈亏%</th><th class="text-right">净值</th><th class="text-right" style="width:60px">操作</th></tr></thead><tbody>${rows}</tbody></table>`;
-  c.appendChild(tbl);
+  tbl.innerHTML=`<thead><tr><th>基金</th><th class=text-right>份数</th><th class=text-right>投入(¥)</th><th class=text-right>市值(¥)</th><th class=text-right>盈亏(¥)</th><th class=text-right>盈亏%</th><th class=text-right>净值</th><th class=text-right style=width:60px>操作</th></tr></thead><tbody>${rows}</tbody></table>`;
+  c.appendChild(tbl)
 }
 
-function renderPlans(plans) {
-  const c=document.getElementById('plansTable');
-  const periodMap={daily:'每日',weekly:'每周',monthly:'每月'};
+function renderPlans(plans){
+  const c=document.getElementById('plansTable'),pm={daily:'每日',weekly:'每周',monthly:'每月'};
   if(!plans||!plans.length){
-    let h=c.querySelector('.table-header'); c.innerHTML=''; c.appendChild(h);
-    c.innerHTML+='<div style="padding:40px;text-align:center;color:#8b949e">暂无定投计划<br><span style="font-size:12px">点「➕ 新增」添加，或从 settings.yaml 同步</span></div>';
-    return}
+    let h=c.querySelector('.table-header');c.innerHTML='';c.appendChild(h);
+    c.innerHTML+='<div style=padding:40px;text-align:center;color:#8b949e>暂无定投计划</div>';return}
   let rows='';
-  for(const p of plans){
-    rows+=`<tr>
-      <td><b>${esc(p.fund_name)}</b><br><span class="text-muted" style="font-size:11px">${p.fund_code}</span></td>
-      <td class="text-right bold">¥${fmt(p.amount)}</td>
-      <td class="text-right">${periodMap[p.period]||p.period}</td>
-      <td class="text-right">${p.note?esc(p.note):'—'}</td>
-      <td class="text-right" style="white-space:nowrap">
-        <button class="btn-edit" onclick='openModal("plan",${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️</button>
-        <button class="btn-del" onclick='delItem("plan",${p.id},"${escAttr(p.fund_name)}")'>🗑️</button>
-      </td>
-    </tr>`;
-  }
+  for(const p of plans)rows+=`<tr><td><b>${esc(p.fund_name)}</b><br><span class=text-muted style=font-size:11px>${p.fund_code}</span></td><td class=text-right bold>¥${fmt(p.amount)}</td><td class=text-right>${pm[p.period]||p.period}</td><td class=text-right>${p.note?esc(p.note):'—'}</td><td class=text-right style=white-space:nowrap><button class=btn-edit onclick="openModal('plan',${JSON.stringify(p).replace(/'/g,"&#39;")})">✏️</button><button class=btn-del onclick="delItem('plan',${p.id},'${escAttr(p.fund_name)}')">🗑️</button></td></tr>`;
   c.querySelector('.table-header span').textContent='共 '+plans.length+' 条';
-  const old=c.querySelector('table'); if(old) old.remove();
+  const old=c.querySelector('table');if(old)old.remove();
   const tbl=document.createElement('table');
-  tbl.innerHTML=`<thead><tr><th>基金</th><th class="text-right">金额(¥/次)</th><th class="text-right">周期</th><th class="text-right">备注</th><th class="text-right" style="width:60px">操作</th></tr></thead><tbody>${rows}</tbody></table>`;
-  c.appendChild(tbl);
+  tbl.innerHTML=`<thead><tr><th>基金</th><th class=text-right>金额(¥/次)</th><th class=text-right>周期</th><th class=text-right>备注</th><th class=text-right style=width:60px>操作</th></tr></thead><tbody>${rows}</tbody></table>`;
+  c.appendChild(tbl)
 }
 
 function fmt(v){return Math.abs(v).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function esc(s){if(!s)return '';const d=document.createElement('div');d.textContent=s;return d.innerHTML}
 function escAttr(s){if(!s)return '';return s.replace(/'/g,"\\'").replace(/"/g,'&quot;')}
 
-loadFromCache();
+loadFromCache()
 </script>
 </body>
 </html>
