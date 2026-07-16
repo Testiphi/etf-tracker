@@ -86,8 +86,18 @@ def generate_report(
         "",
         f"_生成时间：{now.strftime('%H:%M')} 北京时间_",
         "",
-        "---",
-        "",
+    ]
+
+    # ── AI 分析（提到最前面，看一眼整体评价）──
+    if ai_analysis:
+        lines.extend([
+            ai_analysis,
+            "",
+            "---",
+            "",
+        ])
+
+    lines.extend([
         "### 📋 今日净值",
         "",
         "| 基金 | 代码 | 单位净值 | 日涨跌幅 | 对应指数 | 数据源 |",
@@ -239,17 +249,6 @@ def generate_report(
         for line in advice_parts:
             lines.append(line)
         lines.append("")
-
-    # ── AI 分析 ──────────────────────────────────────
-    if ai_analysis:
-        lines.extend([
-            "---",
-            "",
-            "### 🧠 AI 分析",
-            "",
-            ai_analysis,
-            "",
-        ])
 
     # ── 错误信息 ─────────────────────────────────────
     if errors:
