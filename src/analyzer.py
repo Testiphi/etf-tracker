@@ -38,7 +38,7 @@ def analyze(
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-flash",
         "messages": [
             {"role": "system", "content": "你是一位专业的基金投资分析师，语言简洁、客观。回答问题使用中文。"},
             {"role": "user", "content": prompt},
