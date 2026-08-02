@@ -56,11 +56,17 @@ def analyze(
         )
         resp.raise_for_status()
         data = resp.json()
-        content = data["choices"][0]["message"].get("content") or ""
-        content = content.strip()
+        msg = data["choices"][0]["message"]
+        # deepseek-v4-flash 为推理模型：最终答案可能在 reasoning_content，
+        # content 字段经常为空，需要 fallback 拼接
+        content = (msg.get("content") or "").strip()
+        reasoning = (msg.get("reasoning_content") or "").strip()
+        if not content and reasoning:
+            # 用推理内容兜底（去掉思考痕迹的开头，尽量保留完整分析）
+            content = reasoning
         if not content:
-            # 返回 200 但内容为空：打印响应原文便于排查，不静默吞掉
-            print(f"  ⚠ DeepSeek 返回 200 但 content 为空: {str(data)[:500]}")
+            # 返回 200 但两个字段都为空：打印响应原文便于排查，不静默吞掉
+            print(f"  ⚠ DeepSeek 返回 200 但 content/reasoning 均为空: {str(data)[:500]}")
             return "AI 分析返回空内容（HTTP 200），请检查 API Key 是否有效或模型是否可用。"
         print("  AI 分析完成")
         return content
