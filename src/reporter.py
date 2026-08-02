@@ -97,7 +97,31 @@ def generate_report(
             "",
         ])
 
+    # ── 大盘行情板块（在基金配置之前）──────────────────────
+    if cfg.indices and any(f"index:{i['code']}" in index_results or i["code"] in index_results for i in cfg.indices):
+        lines.extend([
+            "### 📈 大盘行情",
+            "",
+            "| 指数 | 代码 | 收盘价 | 涨跌幅 | 成交量 | 数据源 |",
+            "|------|------|:-----:|:-----:|:-----:|:------:|",
+        ])
+        for idx_cfg in cfg.indices:
+            code = idx_cfg["code"]
+            name = idx_cfg["name"]
+            point = index_results.get(code)
+            if point:
+                vol_str = _volume_str(point.volume)
+                source_icons = _FUND_SOURCE_ICONS.get(point.source, "❓")
+                lines.append(
+                    f"| {point.name if point.name != name else name} | `{code}` | {point.net_value:.2f} | {_format_change(point.daily_change)} | {vol_str} | {source_icons} {point.source} |"
+                )
+            else:
+                lines.append(f"| {name} | `{code}` | — | ⚠️ 无数据 | — | ⛔ |")
+        lines.append("")
+
     lines.extend([
+        "---",
+        "",
         "### 📋 今日净值",
         "",
         "| 基金 | 代码 | 单位净值 | 日涨跌幅 | 对应指数 | 数据源 |",
@@ -119,34 +143,10 @@ def generate_report(
         else:
             lines.append(f"| {name} | `{code}` | — | ⚠️ 无数据 | — | ⛔ |")
 
-    # ── 大盘指数板块 ──────────────────────────────────
-    if cfg.indices and any(f"index:{i['code']}" in index_results or i["code"] in index_results for i in cfg.indices):
-        lines.extend([
-            "",
-            "---",
-            "",
-            "### 📈 大盘行情",
-            "",
-            "| 指数 | 代码 | 收盘价 | 涨跌幅 | 成交量 | 数据源 |",
-            "|------|------|:-----:|:-----:|:-----:|:------:|",
-        ])
-        for idx_cfg in cfg.indices:
-            code = idx_cfg["code"]
-            name = idx_cfg["name"]
-            point = index_results.get(code)
-            if point:
-                vol_str = _volume_str(point.volume)
-                source_icons = _FUND_SOURCE_ICONS.get(point.source, "❓")
-                lines.append(
-                    f"| {name} | `{code}` | {point.net_value:.2f} | {_format_change(point.daily_change)} | {vol_str} | {source_icons} {point.source} |"
-                )
-            else:
-                lines.append(f"| {name} | `{code}` | — | ⚠️ 无数据 | — | ⛔ |")
-
-    # ── 黄金板块 ─────────────────────────────────────
+    # ── 黄金板块（已并入大盘 indices，旧数据兼容保留）──────
     commodity_prefix = "commodity:"
     gold_items = {k: v for k, v in index_results.items() if k.startswith(commodity_prefix)}
-    if gold_items:
+    if gold_items and cfg.commodities:
         lines.extend([
             "",
             "---",

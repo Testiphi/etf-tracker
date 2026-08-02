@@ -143,7 +143,8 @@ class IndexFetcher:
         """根据 market 类型路由到对应获取方法"""
         if market == "cn_index":
             return self._fetch_cn_index(code, name)
-        elif market == "us_index":
+        elif market in ("us_index", "hk_index"):
+            # 港股指数（恒生科技等）走同样的雅虎→腾讯多源逻辑
             return self._fetch_us_index(code, name)
         elif market == "cn_gold":
             return self._fetch_cn_gold(code, name)
@@ -154,6 +155,19 @@ class IndexFetcher:
     # ── 中国A股指数 ──────────────────────────────────
 
     def _fetch_cn_index(self, code: str, name: str) -> FundDataPoint | None:
+        """获取A股指数数据（东方财富 → 腾讯财经 双源）"""
+        point = self._try_em_cn_index(code, name)
+        if point:
+            return point
+
+        point = self._try_tencent_cn_index(code, name)
+        if point:
+            return point
+
+        print(f"  ⚠ 所有A股指数数据源均失败 [{name}]")
+        return None
+
+    def _try_em_cn_index(self, code: str, name: str) -> FundDataPoint | None:
         """通过东方财富 ulist API 获取A股指数数据（修正版）
 
         使用 ulist.np/get 端点 + 正确的字段映射：
@@ -208,14 +222,67 @@ class IndexFetcher:
             print(f"  ⚠ 东方财富指数行情失败 [{name}]: {e}")
             return None
 
+    def _try_tencent_cn_index(self, code: str, name: str) -> FundDataPoint | None:
+        """通过腾讯财经 K线 API 获取A股指数（东方财富不可用时的 fallback）
+
+        腾讯 A 股指数代码格式：sh000688 / sh000510（上证前缀 sh，深证 sz）
+        day 行格式: [date, close, open, high, low, volume]
+        涨跌幅用前一交易日收盘价计算，比 open 对比更准确。
+        """
+        if not code.isdigit():
+            return None
+        # 上证指数 000xxx 开头用 sh，深证指数 399xxx 用 sz；A股指数多为 000/399 开头
+        prefix = "sz" if code.startswith("399") else "sh"
+        tc_code = f"{prefix}{code}"
+
+        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={tc_code},day,,,320,qfq"
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=self.timeout)
+            resp.raise_for_status()
+            data = resp.json()
+
+            day_data = data.get("data", {}).get(tc_code, {}).get("day", [])
+            if not day_data:
+                return None
+
+            last = day_data[-1]
+            if len(last) < 6:
+                return None
+
+            date_str = last[0]
+            close_price = float(last[1])
+            volume = float(last[5]) if last[5] else 0.0
+
+            # 用前一交易日收盘价计算涨跌幅
+            change_pct = 0.0
+            if len(day_data) >= 2:
+                prev_close = float(day_data[-2][1])
+                if prev_close > 0:
+                    change_pct = round((close_price - prev_close) / prev_close * 100, 2)
+
+            return FundDataPoint(
+                code=code,
+                name=name,
+                date=date_str,
+                net_value=round(close_price, 2),
+                acc_value=0,
+                daily_change=change_pct,
+                volume=round(volume, 0),
+                source="tencent-finance",
+            )
+        except Exception as e:
+            print(f"  ⚠ 腾讯A股指数失败 [{name}]: {e}")
+            return None
+
     # ── 美股指数 ──────────────────────────────────
 
-    # 腾讯财经 US 代码映射
+    # 腾讯财经 US/HK 代码映射
     _TENCENT_US_MAP = {
-        "^GSPC": "usINX",   # 标普500
-        "^NDX": "usNDX",    # 纳斯达克100
-        "^IXIC": "usIXIC",  # 纳斯达克综合（备用）
-        "^DJI": "usDJI",    # 道琼斯（备用）
+        "^GSPC": "usINX",     # 标普500
+        "^NDX": "usNDX",      # 纳斯达克100
+        "^IXIC": "usIXIC",    # 纳斯达克综合（备用）
+        "^DJI": "usDJI",      # 道琼斯（备用）
+        "^HSTECH": "hkHSTECH",  # 恒生科技指数
     }
 
     def _fetch_us_index(self, code: str, name: str) -> FundDataPoint | None:
@@ -404,7 +471,9 @@ class IndexFetcher:
             change_pct = 0.0
             try:
                 from ..storage import get_latest_price_for_code
-                prev_close = get_latest_price_for_code(f"commodity:{code}")
+                # 兼容两种存储键：新版并入 indices 后存 "XAU"，旧数据为 "commodity:XAU"
+                prev_close = get_latest_price_for_code(code) or \
+                    get_latest_price_for_code(f"commodity:{code}")
                 if prev_close and prev_close > 0:
                     change_pct = round((price_cny_gram - prev_close) / prev_close * 100, 2)
             except Exception:
