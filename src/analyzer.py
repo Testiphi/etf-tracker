@@ -56,9 +56,14 @@ def analyze(
         )
         resp.raise_for_status()
         data = resp.json()
-        content = data["choices"][0]["message"]["content"]
+        content = data["choices"][0]["message"].get("content") or ""
+        content = content.strip()
+        if not content:
+            # 返回 200 但内容为空：打印响应原文便于排查，不静默吞掉
+            print(f"  ⚠ DeepSeek 返回 200 但 content 为空: {str(data)[:500]}")
+            return "AI 分析返回空内容（HTTP 200），请检查 API Key 是否有效或模型是否可用。"
         print("  AI 分析完成")
-        return content.strip()
+        return content
     except requests.exceptions.Timeout:
         print("  AI API 请求超时")
         return "AI 分析请求超时，请稍后重试。"
