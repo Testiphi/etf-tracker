@@ -57,17 +57,31 @@ def analyze(
         resp.raise_for_status()
         data = resp.json()
         msg = data["choices"][0]["message"]
-        # deepseek-v4-flash 为推理模型：最终答案可能在 reasoning_content，
-        # content 字段经常为空，需要 fallback 拼接
+        # deepseek-v4-flash 为推理模型：响应含 reasoning_content（思考过程）与 content（最终回答）。
+        # 日报只允许输出最终回答 content，绝不能用 reasoning_content 兜底，避免思考草稿混入报告。
         content = (msg.get("content") or "").strip()
-        reasoning = (msg.get("reasoning_content") or "").strip()
-        if not content and reasoning:
-            # 用推理内容兜底（去掉思考痕迹的开头，尽量保留完整分析）
-            content = reasoning
         if not content:
-            # 返回 200 但两个字段都为空：打印响应原文便于排查，不静默吞掉
-            print(f"  ⚠ DeepSeek 返回 200 但 content/reasoning 均为空: {str(data)[:500]}")
-            return "AI 分析返回空内容（HTTP 200），请检查 API Key 是否有效或模型是否可用。"
+            # content 为空：重试一次；仍为空则明确报错，不拿思考过程凑数
+            print("  ⚠ DeepSeek 首次返回 content 为空，重试一次...")
+            resp = requests.post(
+                DEEPSEEK_URL,
+                json=payload,
+                headers=headers,
+                timeout=60,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            msg = data["choices"][0]["message"]
+            content = (msg.get("content") or "").strip()
+        if not content:
+            reasoning = (msg.get("reasoning_content") or "").strip()
+            finish_reason = data["choices"][0].get("finish_reason")
+            # reasoning 仅用于日志排查，绝不写入报告
+            print(
+                f"  ⚠ DeepSeek 返回 200 但 content 仍为空 "
+                f"(finish_reason={finish_reason}, reasoning 长度 {len(reasoning)}，已丢弃不入报告): {str(data)[:300]}"
+            )
+            return "AI 分析返回空内容（HTTP 200，已重试一次），请检查 API Key 是否有效或模型是否可用。"
         print("  AI 分析完成")
         return content
     except requests.exceptions.Timeout:
