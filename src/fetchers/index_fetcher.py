@@ -410,7 +410,8 @@ class IndexFetcher:
     # ── 黄金行情 ──────────────────────────────────
 
     GOLD_API_URL = "https://api.gold-api.com/price/XAU"
-    SINA_FX_URL = "https://hq.sinajs.cn/list=fx_susdcny"
+    # 新浪行情：一次请求同时取 USD/CNY 汇率 + 伦敦金 XAU（hf_XAU 含昨收，用于计算涨跌幅）
+    SINA_FX_URL = "https://hq.sinajs.cn/list=fx_susdcny,hf_XAU"
     _OZ_TO_GRAM = 31.1035  # 1 金衡盎司 = 31.1035 克
 
     def _fetch_cn_gold(self, code: str, name: str) -> FundDataPoint | None:
@@ -444,7 +445,7 @@ class IndexFetcher:
             if xau_usd <= 0:
                 raise ValueError(f"Invalid gold price: {xau_usd}")
 
-            # 2. 获取 USD/CNY 汇率（新浪财经）
+            # 2. 获取 USD/CNY 汇率 + 伦敦金昨收（新浪财经，一次请求两个行情）
             resp_fx = requests.get(
                 self.SINA_FX_URL,
                 headers={"Referer": "https://finance.sina.com.cn"},
@@ -454,7 +455,7 @@ class IndexFetcher:
             text = resp_fx.text
             # 解析新浪格式: var hq_str_fx_susdcny="16:58:04,6.7995,..."
             import re
-            match = re.search(r'"([^"]+)"', text)
+            match = re.search(r'hq_str_fx_susdcny="([^"]+)"', text)
             if not match:
                 raise ValueError(f"Cannot parse Sina FX: {text[:100]}")
             fields = match.group(1).split(",")
@@ -464,23 +465,39 @@ class IndexFetcher:
             if usd_cny <= 0:
                 raise ValueError(f"Invalid USD/CNY: {usd_cny}")
 
+            # 解析新浪 hf_XAU 昨收（伦敦金 XAU/USD 前一交易日收盘价）
+            # 格式: var hq_str_hf_XAU="最新价,昨收,今开,最高,最低,时间,买价,卖价,..."
+            prev_xau_usd = None
+            m_gold = re.search(r'hq_str_hf_XAU="([^"]+)"', text)
+            if m_gold:
+                g = m_gold.group(1).split(",")
+                if len(g) > 1:
+                    try:
+                        prev_xau_usd = float(g[1])
+                    except ValueError:
+                        prev_xau_usd = None
+
             # 3. 换算为人民币/克
             price_cny_gram = round(xau_usd * usd_cny / self._OZ_TO_GRAM, 2)
 
-            # 4. 从历史数据库获取前一日价格计算涨跌幅
+            # 4. 计算涨跌幅：优先用新浪伦敦金昨收（API 自带，不依赖本地历史库，
+            #    CI 每次全新空库也能算对）；历史库仅作兜底
             change_pct = 0.0
-            try:
-                from ..storage import get_latest_price_for_code
-                # 兼容两种存储键：新版并入 indices 后存 "XAU"，旧数据为 "commodity:XAU"
-                prev_close = get_latest_price_for_code(code) or \
-                    get_latest_price_for_code(f"commodity:{code}")
-                if prev_close and prev_close > 0:
-                    change_pct = round((price_cny_gram - prev_close) / prev_close * 100, 2)
-            except Exception:
-                pass
+            if prev_xau_usd and prev_xau_usd > 0:
+                change_pct = round((xau_usd - prev_xau_usd) / prev_xau_usd * 100, 2)
+            else:
+                try:
+                    from ..storage import get_latest_price_for_code
+                    # 兼容两种存储键：新版并入 indices 后存 "XAU"，旧数据为 "commodity:XAU"
+                    prev_close = get_latest_price_for_code(code) or \
+                        get_latest_price_for_code(f"commodity:{code}")
+                    if prev_close and prev_close > 0:
+                        change_pct = round((price_cny_gram - prev_close) / prev_close * 100, 2)
+                except Exception:
+                    pass
 
             now = datetime.now(timezone(timedelta(hours=8)))
-            print(f"    🥇 XAU/USD=${xau_usd:.2f} USD/CNY={usd_cny:.4f} → ¥{price_cny_gram:.2f}/克")
+            print(f"    🥇 XAU/USD=${xau_usd:.2f} 昨收=${prev_xau_usd or 0:.2f} USD/CNY={usd_cny:.4f} → ¥{price_cny_gram:.2f}/克 ({change_pct:+.2f}%)")
 
             return FundDataPoint(
                 code=code,
