@@ -44,7 +44,9 @@ def analyze(
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.7,
-        "max_tokens": 2500,
+        # deepseek-v4-flash 为推理模型：max_tokens 同时覆盖 reasoning_content(思考过程) 与 content(最终回答)。
+        # 思考过程会吃掉大量 token 预算，2500 太小导致 content 被截断（日报板块缺失），故提到 8000。
+        "max_tokens": 8000,
     }
 
     try:
@@ -52,14 +54,31 @@ def analyze(
             DEEPSEEK_URL,
             json=payload,
             headers=headers,
-            timeout=60,
+            timeout=90,
         )
         resp.raise_for_status()
         data = resp.json()
         msg = data["choices"][0]["message"]
+        finish_reason = data["choices"][0].get("finish_reason")
         # deepseek-v4-flash 为推理模型：响应含 reasoning_content（思考过程）与 content（最终回答）。
         # 日报只允许输出最终回答 content，绝不能用 reasoning_content 兜底，避免思考草稿混入报告。
         content = (msg.get("content") or "").strip()
+        if finish_reason == "length":
+            # 输出被 max_tokens 截断（日报板块不完整）——重试一次；仍截断则返回内容并加显眼告警
+            print(
+                f"  ⚠ DeepSeek 输出被截断 (finish_reason=length, content 长度 {len(content)})，重试一次..."
+            )
+            resp = requests.post(
+                DEEPSEEK_URL,
+                json=payload,
+                headers=headers,
+                timeout=90,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            msg = data["choices"][0]["message"]
+            finish_reason = data["choices"][0].get("finish_reason")
+            content = (msg.get("content") or "").strip()
         if not content:
             # content 为空：重试一次；仍为空则明确报错，不拿思考过程凑数
             print("  ⚠ DeepSeek 首次返回 content 为空，重试一次...")
@@ -67,11 +86,12 @@ def analyze(
                 DEEPSEEK_URL,
                 json=payload,
                 headers=headers,
-                timeout=60,
+                timeout=90,
             )
             resp.raise_for_status()
             data = resp.json()
             msg = data["choices"][0]["message"]
+            finish_reason = data["choices"][0].get("finish_reason")
             content = (msg.get("content") or "").strip()
         if not content:
             reasoning = (msg.get("reasoning_content") or "").strip()
@@ -82,6 +102,13 @@ def analyze(
                 f"(finish_reason={finish_reason}, reasoning 长度 {len(reasoning)}，已丢弃不入报告): {str(data)[:300]}"
             )
             return "AI 分析返回空内容（HTTP 200，已重试一次），请检查 API Key 是否有效或模型是否可用。"
+        if finish_reason == "length":
+            # 重试后仍被截断：保留内容，但附加显眼告警，避免日报“少板块”被静默吞掉
+            print(f"  ⚠ 重试后 DeepSeek 输出仍被截断 (content 长度 {len(content)})，将在日报中附加告警")
+            content = (
+                content
+                + "\n\n> ⚠️ 本日 AI 分析输出被长度上限截断（内容不完整），请关注后续日报或增大 max_tokens。"
+            )
         print("  AI 分析完成")
         return content
     except requests.exceptions.Timeout:
