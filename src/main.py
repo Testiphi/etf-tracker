@@ -121,6 +121,11 @@ def main():
     print("─" * 40)
 
     # 9. 发送邮件
+    if not cfg.mail_enabled:
+        print("\n📧 邮件功能已暂停（settings.yaml: email.enabled = false），跳过发送")
+        print("\n🎉 全部完成！（日报已存档，未发送邮件）")
+        return
+
     print(f"\n📧 发送邮件至 {cfg.mail_to}...")
     try:
         send_report(cfg, report)

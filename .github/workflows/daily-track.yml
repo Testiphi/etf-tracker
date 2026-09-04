@@ -1,9 +1,11 @@
 name: ETF 日报追踪
 
+# ⏸ 已暂停定时运行（2026-09-04）：Outlook SMTP 密码登录被微软下线，邮件暂时无法发送。
+#    如需恢复：取消下面 schedule 的注释，并把 settings.yaml 中 email.enabled 改回 true。
 on:
-  schedule:
-    - cron: '30 10 * * 1-5'   # 周一到周五 UTC 10:30 = CST 18:30
-  workflow_dispatch:
+  # schedule:
+  #   - cron: '30 10 * * 1-5'   # 周一到周五 UTC 10:30 = CST 18:30
+  workflow_dispatch:   # 仍可随时在 Actions 页手动触发
 
 permissions:
   contents: write

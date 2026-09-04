@@ -44,6 +44,7 @@ class Config:
 
         # --- 邮件 ---
         mail = raw.get("email", {}) or {}
+        self.mail_enabled: bool = mail.get("enabled", True)  # 默认 true，兼容未配置该键的旧设置
         self.smtp_server: str = mail.get("smtp_server", "smtp.office365.com")
         self.smtp_port: int = mail.get("smtp_port", 587)
         self.smtp_use_tls: bool = mail.get("use_tls", True)
